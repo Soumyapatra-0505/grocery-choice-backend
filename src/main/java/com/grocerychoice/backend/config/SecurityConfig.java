@@ -20,14 +20,17 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Spring Security configuration for Grocery Choice Backend.
  *
  * Implements stateless JWT authentication with strict role-based access control:
- * - Public: Health check, Auth endpoints (send-otp, verify-otp, owner-login), Catalog GETs
+ * - Public: Health check, Auth endpoints (send-otp, verify-otp, owner-login), Catalog GETs, CORS preflight OPTIONS
  * - Owner: Product/Category modifications, all orders listing, order status transitions
  * - Customer: Order creation, personal order history, personal address management
  */
@@ -40,7 +43,7 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
     private final CustomAccessDeniedHandler accessDeniedHandler;
 
-    @Value("${cors.allowed-origins:http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,https://grocery-choice-customer-8ntfdslp-grocery-choice.vercel.app}")
+    @Value("${cors.allowed-origins:http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,https://grocery-choice-customer.vercel.app,https://grocery-choice-customer-git-main-grocery-choice.vercel.app,https://grocery-choice-customer-8ntfdslp-grocery-choice.vercel.app}")
     private String allowedOriginsConfig;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
@@ -67,6 +70,9 @@ public class SecurityConfig {
                 .accessDeniedHandler(accessDeniedHandler)
             )
             .authorizeHttpRequests(authorize -> authorize
+                // Allow all CORS preflight OPTIONS requests without authentication
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
                 // Public Health & Auth Endpoints
                 .requestMatchers("/api/health/**").permitAll()
                 .requestMatchers("/api/auth/send-otp", "/api/auth/verify-otp", "/api/auth/owner-login", "/api/auth/owner/**", "/api/auth/owner-token", "/api/auth/dev-otp/**").permitAll()
@@ -112,15 +118,35 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        List<String> origins = Arrays.stream(allowedOriginsConfig.split(","))
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .toList();
+        Set<String> origins = new LinkedHashSet<>();
 
-        configuration.setAllowedOrigins(origins);
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        if (allowedOriginsConfig != null && !allowedOriginsConfig.isBlank()) {
+            Arrays.stream(allowedOriginsConfig.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .forEach(origins::add);
+        }
+
+        // Always ensure verified Grocery Choice production & local storefront origins are allowed
+        origins.add("http://localhost:5173");
+        origins.add("http://localhost:5174");
+        origins.add("http://127.0.0.1:5173");
+        origins.add("http://127.0.0.1:5174");
+        origins.add("https://grocery-choice-customer.vercel.app");
+        origins.add("https://grocery-choice-customer-git-main-grocery-choice.vercel.app");
+        origins.add("https://grocery-choice-customer-8ntfdslp-grocery-choice.vercel.app");
+
+        configuration.setAllowedOrigins(new ArrayList<>(origins));
+        configuration.setAllowedOriginPatterns(List.of(
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+            "https://grocery-choice-customer*.vercel.app",
+            "https://*-grocery-choice.vercel.app"
+        ));
+
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
         configuration.setAllowedHeaders(List.of("*"));
-        configuration.setExposedHeaders(List.of("Authorization", "Content-Disposition"));
+        configuration.setExposedHeaders(List.of("Authorization", "Content-Disposition", "Access-Control-Allow-Origin", "Access-Control-Allow-Credentials"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
