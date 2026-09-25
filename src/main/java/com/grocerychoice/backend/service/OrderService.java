@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
-    private static final BigDecimal FREE_DELIVERY_THRESHOLD = new BigDecimal("500.00");
+    private static final BigDecimal FREE_DELIVERY_THRESHOLD = new BigDecimal("199.00");
     private static final BigDecimal STANDARD_DELIVERY_CHARGE = new BigDecimal("40.00");
 
     private final OrderRepository orderRepository;
@@ -141,7 +141,7 @@ public class OrderService {
         // Save updated product stock quantities
         productRepository.saveAll(productsToUpdate);
 
-        // 4. Calculate Delivery Charge (Rule: >= 500 => 0, < 500 => 40)
+        // 4. Calculate Delivery Charge (Rule: >= 199 => 0, < 199 => 40)
         BigDecimal deliveryCharge = calculateDeliveryCharge(subtotal);
         BigDecimal discount = BigDecimal.ZERO;
         BigDecimal totalAmount = subtotal.add(deliveryCharge).subtract(discount);
