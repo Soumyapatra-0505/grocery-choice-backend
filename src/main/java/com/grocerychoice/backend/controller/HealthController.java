@@ -49,4 +49,22 @@ public class HealthController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
         }
     }
+
+    @GetMapping("/health/memory")
+    public ResponseEntity<Map<String, Object>> checkMemory() {
+        Runtime runtime = Runtime.getRuntime();
+        long maxMemory = runtime.maxMemory();
+        long totalMemory = runtime.totalMemory();
+        long freeMemory = runtime.freeMemory();
+        long usedMemory = totalMemory - freeMemory;
+
+        Map<String, Object> memory = new LinkedHashMap<>();
+        memory.put("status", "UP");
+        memory.put("usedMemoryMb", usedMemory / (1024 * 1024));
+        memory.put("freeMemoryMb", freeMemory / (1024 * 1024));
+        memory.put("totalMemoryMb", totalMemory / (1024 * 1024));
+        memory.put("maxMemoryMb", maxMemory / (1024 * 1024));
+        memory.put("availableProcessors", runtime.availableProcessors());
+        return ResponseEntity.ok(memory);
+    }
 }
