@@ -33,15 +33,26 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final AddressRepository addressRepository;
+    private final NotificationService notificationService;
 
     public OrderService(OrderRepository orderRepository,
                         ProductRepository productRepository,
                         UserRepository userRepository,
                         AddressRepository addressRepository) {
+        this(orderRepository, productRepository, userRepository, addressRepository, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderService(OrderRepository orderRepository,
+                        ProductRepository productRepository,
+                        UserRepository userRepository,
+                        AddressRepository addressRepository,
+                        NotificationService notificationService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.addressRepository = addressRepository;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -171,7 +182,25 @@ public class OrderService {
         log.info("Order created successfully: {} for customer: {} with total: {}",
                 savedOrder.getOrderNumber(), customer.getEmail(), savedOrder.getTotalAmount());
 
+        // For Cash on Delivery (COD), order is confirmed immediately upon placement
+        if (isCodPayment(savedOrder.getPaymentMethod()) && notificationService != null) {
+            try {
+                notificationService.sendOrderConfirmation(savedOrder);
+            } catch (Exception e) {
+                log.error("Failed to dispatch order confirmation notification for COD order #{}: {}",
+                        savedOrder.getOrderNumber(), e.getMessage());
+            }
+        }
+
         return OrderResponse.fromEntity(savedOrder);
+    }
+
+    private boolean isCodPayment(String paymentMethod) {
+        if (paymentMethod == null) {
+            return true;
+        }
+        String lower = paymentMethod.trim().toLowerCase();
+        return lower.contains("cash") || lower.contains("cod");
     }
 
     /**

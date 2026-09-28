@@ -5,6 +5,7 @@ import com.grocerychoice.backend.service.OtpDeliveryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -16,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Architecture is prepared for plugging in Twilio/MSG91 and SendGrid without changing service consumers.
  */
 @Service
+@ConditionalOnProperty(name = "otp.provider", havingValue = "dev", matchIfMissing = true)
 public class DevOtpDeliveryService implements OtpDeliveryService {
 
     private static final Logger log = LoggerFactory.getLogger(DevOtpDeliveryService.class);

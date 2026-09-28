@@ -39,10 +39,19 @@ public class PaymentService {
 
     private final OrderRepository orderRepository;
     private final RazorpayService razorpayService;
+    private final NotificationService notificationService;
 
     public PaymentService(OrderRepository orderRepository, RazorpayService razorpayService) {
+        this(orderRepository, razorpayService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PaymentService(OrderRepository orderRepository,
+                          RazorpayService razorpayService,
+                          NotificationService notificationService) {
         this.orderRepository = orderRepository;
         this.razorpayService = razorpayService;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -172,12 +181,56 @@ public class PaymentService {
         Order saved = orderRepository.save(order);
         log.info("Payment verified successfully for Order #{}. PaymentStatus updated to PAID.", saved.getOrderNumber());
 
+        // Trigger customer order confirmation notification only after successful signature verification
+        if (notificationService != null) {
+            try {
+                notificationService.sendOrderConfirmation(saved);
+            } catch (Exception e) {
+                log.error("Failed to dispatch order confirmation notification for verified paid order #{}: {}",
+                        saved.getOrderNumber(), e.getMessage());
+            }
+        }
+
         return new PaymentVerificationResponse(
                 true,
                 "Payment verified successfully",
                 saved.getId(),
                 saved.getOrderNumber(),
                 PaymentStatus.PAID
+        );
+    }
+
+    /**
+     * Marks payment as FAILED if payment gateway transaction failed or was cancelled.
+     * Keeps order state consistent with backend design while preserving customer stock.
+     */
+    @Transactional
+    public PaymentVerificationResponse handlePaymentFailure(Long orderId, String reason, UserPrincipal principal) {
+        if (orderId == null) {
+            throw new InvalidDataException("Order ID is required to update payment status");
+        }
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId));
+
+        if (principal != null && Role.CUSTOMER.equals(principal.getRole())) {
+            if (!principal.getId().equals(order.getUser().getId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have permission to update payment for this order");
+            }
+        }
+
+        if (order.getPaymentStatus() != PaymentStatus.PAID) {
+            order.setPaymentStatus(PaymentStatus.FAILED);
+            orderRepository.save(order);
+            log.info("Payment for Order #{} marked as FAILED. Reason: {}", order.getOrderNumber(), reason);
+        }
+
+        return new PaymentVerificationResponse(
+                false,
+                reason != null && !reason.isBlank() ? reason : "Payment failed or was cancelled",
+                order.getId(),
+                order.getOrderNumber(),
+                order.getPaymentStatus()
         );
     }
 }

@@ -42,6 +42,15 @@ public class AuthController {
     }
 
     /**
+     * Verifies MSG91 OTP widget access token server-side and authenticates/registers the customer.
+     */
+    @PostMapping("/msg91/verify")
+    public ResponseEntity<AuthResponse> verifyMsg91Token(@Valid @RequestBody Msg91TokenVerifyRequest request) {
+        AuthResponse response = authService.verifyMsg91WidgetToken(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * Authenticates owner/store manager credentials via secure BCrypt password comparison.
      */
     @PostMapping({"/owner/login", "/owner-login"})
@@ -97,12 +106,21 @@ public class AuthController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
         }
-        return ResponseEntity.ok(new UserSummaryResponse(
-                principal.getId(),
-                principal.getFullName(),
-                principal.getEmail(),
-                principal.getPhone(),
-                principal.getRole()
-        ));
+        return ResponseEntity.ok(authService.getUserProfile(principal.getId()));
+    }
+
+    /**
+     * Updates current authenticated customer profile.
+     */
+    @PutMapping("/me")
+    public ResponseEntity<UserSummaryResponse> updateProfile(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody UpdateProfileRequest request
+    ) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        UserSummaryResponse response = authService.updateCustomerProfile(principal.getId(), request);
+        return ResponseEntity.ok(response);
     }
 }

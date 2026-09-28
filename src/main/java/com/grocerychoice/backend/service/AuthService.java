@@ -6,6 +6,8 @@ import com.grocerychoice.backend.repository.AddressRepository;
 import com.grocerychoice.backend.repository.OtpVerificationRepository;
 import com.grocerychoice.backend.repository.UserRepository;
 import com.grocerychoice.backend.security.JwtTokenProvider;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,9 +17,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -35,11 +44,22 @@ public class AuthService {
     private final OtpVerificationRepository otpVerificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
-    private final OtpDeliveryService otpDeliveryService;
+    private final Optional<OtpDeliveryService> otpDeliveryService;
 
     private final int otpExpiryMinutes;
     private final int maxAttempts;
     private final int resendCooldownSeconds;
+
+    @Value("${msg91.auth-key:${MSG91_AUTH_KEY:}}")
+    private String msg91AuthKey;
+
+    @Value("${msg91.verify-url:${MSG91_VERIFY_URL:https://control.msg91.com/api/v5/widget/verifyAccessToken}}")
+    private String msg91VerifyUrl = "https://control.msg91.com/api/v5/widget/verifyAccessToken";
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
 
     public AuthService(
             UserRepository userRepository,
@@ -47,7 +67,7 @@ public class AuthService {
             OtpVerificationRepository otpVerificationRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider jwtTokenProvider,
-            OtpDeliveryService otpDeliveryService,
+            Optional<OtpDeliveryService> otpDeliveryService,
             @Value("${otp.expiry-minutes:5}") int otpExpiryMinutes,
             @Value("${otp.max-attempts:5}") int maxAttempts,
             @Value("${otp.resend-cooldown-seconds:60}") int resendCooldownSeconds) {
@@ -56,7 +76,7 @@ public class AuthService {
         this.otpVerificationRepository = otpVerificationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
-        this.otpDeliveryService = otpDeliveryService;
+        this.otpDeliveryService = otpDeliveryService != null ? otpDeliveryService : Optional.empty();
         this.otpExpiryMinutes = otpExpiryMinutes;
         this.maxAttempts = maxAttempts;
         this.resendCooldownSeconds = resendCooldownSeconds;
@@ -71,6 +91,11 @@ public class AuthService {
         if (rawIdentifier == null || rawIdentifier.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mobile number or email ID is required");
         }
+
+        OtpDeliveryService deliveryService = otpDeliveryService.orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "OTP delivery service is not configured. When using MSG91, authenticate via the MSG91 OTP Widget."
+        ));
 
         IdentifierInfo idInfo = parseIdentifier(rawIdentifier);
         String normalized = idInfo.normalized;
@@ -107,7 +132,7 @@ public class AuthService {
         otpVerificationRepository.save(verification);
 
         // Dispatch via clean delivery abstraction
-        otpDeliveryService.deliverOtp(normalized, otpString, purpose);
+        deliveryService.deliverOtp(normalized, otpString, purpose);
 
         int totalExpirySeconds = otpExpiryMinutes * 60;
         String successMessage = idInfo.isPhone
@@ -190,6 +215,78 @@ public class AuthService {
     }
 
     /**
+     * Verifies an MSG91 OTP widget access token against MSG91's server-side endpoint,
+     * authenticates or auto-registers the customer, and returns a signed JWT token.
+     */
+    @Transactional
+    public AuthResponse verifyMsg91WidgetToken(Msg91TokenVerifyRequest request) {
+        String rawIdentifier = request.getIdentifier();
+        if (rawIdentifier == null || rawIdentifier.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mobile number or email ID is required");
+        }
+
+        String accessToken = request.getAccessToken();
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "MSG91 access token is required");
+        }
+
+        if (msg91AuthKey == null || msg91AuthKey.isBlank()) {
+            log.error("MSG91 token verification rejected: MSG91_AUTH_KEY is not configured on the server");
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "MSG91 server-side authentication is not configured (missing MSG91_AUTH_KEY)"
+            );
+        }
+
+        try {
+            String requestBody = objectMapper.writeValueAsString(Map.of("access-token", accessToken.trim()));
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(msg91VerifyUrl))
+                    .header("authkey", msg91AuthKey.trim())
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .timeout(Duration.ofSeconds(10))
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+            if (httpResponse.statusCode() >= 400) {
+                log.warn("MSG91 verifyAccessToken API returned HTTP {}: {}", httpResponse.statusCode(), httpResponse.body());
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired MSG91 OTP access token");
+            }
+
+            JsonNode root = objectMapper.readTree(httpResponse.body());
+            String type = root.has("type") ? root.get("type").asText() : "";
+            if (!"success".equalsIgnoreCase(type)) {
+                String errMsg = root.has("message") ? root.get("message").asText() : "MSG91 verification was unsuccessful";
+                log.warn("MSG91 verification rejected with response: {}", httpResponse.body());
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, errMsg);
+            }
+
+            // Successfully verified with MSG91 - now lookup or auto-register customer
+            IdentifierInfo idInfo = parseIdentifier(rawIdentifier);
+            User user = findOrCreateCustomer(idInfo, request.getFullName());
+
+            // Generate stateless JWT token
+            String jwt = jwtTokenProvider.generateToken(user);
+
+            return new AuthResponse(
+                    true,
+                    "Authentication successful via MSG91",
+                    jwt,
+                    UserSummaryResponse.fromUser(user)
+            );
+        } catch (ResponseStatusException rse) {
+            throw rse;
+        } catch (Exception e) {
+            log.error("Error communicating with MSG91 verifyAccessToken API", e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Unable to verify OTP with MSG91 gateway: " + e.getMessage());
+        }
+    }
+
+    /**
      * Authenticates an owner or admin via password or credentials.
      * Enforces server-side BCrypt hash matching and strictly blocks CUSTOMER accounts.
      */
@@ -242,6 +339,11 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Identifier (email or mobile) is required");
         }
 
+        OtpDeliveryService deliveryService = otpDeliveryService.orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "OTP delivery service is not configured. When using MSG91, authenticate via the MSG91 OTP Widget."
+        ));
+
         IdentifierInfo idInfo = parseIdentifier(rawIdentifier);
         String cleanPhone = idInfo.isPhone ? idInfo.cleanDigits : "none";
 
@@ -283,7 +385,7 @@ public class AuthService {
         otpVerificationRepository.save(verification);
 
         // Deliver OTP (in dev mode, caches plain OTP for dev endpoint)
-        otpDeliveryService.deliverOtp(dbIdentifier, plainOtp, OtpPurpose.OWNER_LOGIN);
+        deliveryService.deliverOtp(dbIdentifier, plainOtp, OtpPurpose.OWNER_LOGIN);
 
         return new SendOtpResponse(
                 true,
@@ -380,10 +482,77 @@ public class AuthService {
     }
 
     /**
+     * Retrieves customer profile by user ID.
+     */
+    @Transactional(readOnly = true)
+    public UserSummaryResponse getUserProfile(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        return UserSummaryResponse.fromUser(user);
+    }
+
+    /**
+     * Updates customer profile details: full name, email, phone, gender, and date of birth.
+     */
+    @Transactional
+    public UserSummaryResponse updateCustomerProfile(Long userId, UpdateProfileRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (request.getFullName() != null && !request.getFullName().trim().isEmpty()) {
+            user.setFullName(request.getFullName().trim());
+        }
+
+        if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
+            String newEmail = request.getEmail().trim().toLowerCase();
+            if (!newEmail.equalsIgnoreCase(user.getEmail())) {
+                userRepository.findByEmail(newEmail).ifPresent(existing -> {
+                    if (!existing.getId().equals(user.getId())) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already registered");
+                    }
+                });
+                user.setEmail(newEmail);
+            }
+        }
+
+        if (request.getPhone() != null && !request.getPhone().trim().isEmpty()) {
+            user.setPhone(request.getPhone().trim());
+        }
+
+        if (request.getGender() != null) {
+            String g = request.getGender().trim();
+            user.setGender(g.isEmpty() ? null : g);
+        }
+
+        if (request.getDateOfBirth() != null) {
+            String dob = request.getDateOfBirth().trim();
+            if (dob.isEmpty()) {
+                user.setDateOfBirth(null);
+            } else {
+                try {
+                    LocalDate parsedDob = LocalDate.parse(dob);
+                    if (parsedDob.isAfter(LocalDate.now())) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Date of birth cannot be in the future");
+                    }
+                    user.setDateOfBirth(parsedDob);
+                } catch (DateTimeParseException e) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date format. Expected YYYY-MM-DD");
+                }
+            }
+        }
+
+        User saved = userRepository.save(user);
+        log.info("Updated customer profile for user ID: {}", saved.getId());
+        return UserSummaryResponse.fromUser(saved);
+    }
+
+    /**
      * Retrieves the dev OTP for local test automation.
      */
     public String getDevOtp(String identifier) {
-        return otpDeliveryService.getDevOtp(identifier);
+        return otpDeliveryService
+                .map(service -> service.getDevOtp(identifier))
+                .orElse(null);
     }
 
     private User findOrCreateCustomer(IdentifierInfo idInfo, String requestedName) {

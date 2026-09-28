@@ -72,6 +72,12 @@ public class Order {
     @Column(name = "razorpay_signature", length = 255)
     private String razorpaySignature;
 
+    @Column(name = "notification_sent", nullable = false)
+    private boolean notificationSent = false;
+
+    @Column(name = "notification_sent_at")
+    private LocalDateTime notificationSentAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonManagedReference
     private List<OrderItem> orderItems = new ArrayList<>();
@@ -284,5 +290,21 @@ public class Order {
 
     public void setRazorpaySignature(String razorpaySignature) {
         this.razorpaySignature = razorpaySignature;
+    }
+
+    public boolean isNotificationSent() {
+        return notificationSent;
+    }
+
+    public void setNotificationSent(boolean notificationSent) {
+        this.notificationSent = notificationSent;
+    }
+
+    public LocalDateTime getNotificationSentAt() {
+        return notificationSentAt;
+    }
+
+    public void setNotificationSentAt(LocalDateTime notificationSentAt) {
+        this.notificationSentAt = notificationSentAt;
     }
 }

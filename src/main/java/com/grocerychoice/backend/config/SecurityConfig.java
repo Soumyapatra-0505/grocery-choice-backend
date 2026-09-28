@@ -75,7 +75,7 @@ public class SecurityConfig {
 
                 // Public Health & Auth Endpoints
                 .requestMatchers("/api/health/**").permitAll()
-                .requestMatchers("/api/auth/send-otp", "/api/auth/verify-otp", "/api/auth/owner-login", "/api/auth/owner/**", "/api/auth/owner-token", "/api/auth/dev-otp/**").permitAll()
+                .requestMatchers("/api/auth/send-otp", "/api/auth/verify-otp", "/api/auth/msg91/**", "/api/auth/owner-login", "/api/auth/owner/**", "/api/auth/owner-token", "/api/auth/dev-otp/**").permitAll()
 
                 // Public Catalog Browsing (GET only)
                 .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()

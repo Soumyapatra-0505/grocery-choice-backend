@@ -10,6 +10,8 @@ public class UserSummaryResponse {
     private String email;
     private String phone;
     private Role role;
+    private String gender;
+    private String dateOfBirth;
 
     public UserSummaryResponse() {
     }
@@ -22,15 +24,28 @@ public class UserSummaryResponse {
         this.role = role;
     }
 
+    public UserSummaryResponse(Long id, String fullName, String email, String phone, Role role, String gender, String dateOfBirth) {
+        this.id = id;
+        this.fullName = fullName;
+        this.email = email;
+        this.phone = phone;
+        this.role = role;
+        this.gender = gender;
+        this.dateOfBirth = dateOfBirth;
+    }
+
     public static UserSummaryResponse fromUser(User user) {
         if (user == null) return null;
-        return new UserSummaryResponse(
+        UserSummaryResponse response = new UserSummaryResponse(
                 user.getId(),
                 user.getFullName(),
                 user.getEmail(),
                 user.getPhone(),
                 user.getRole()
         );
+        response.setGender(user.getGender());
+        response.setDateOfBirth(user.getDateOfBirth() != null ? user.getDateOfBirth().toString() : null);
+        return response;
     }
 
     public Long getId() {
@@ -71,5 +86,21 @@ public class UserSummaryResponse {
 
     public void setRole(Role role) {
         this.role = role;
+    }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
+
+    public String getDateOfBirth() {
+        return dateOfBirth;
+    }
+
+    public void setDateOfBirth(String dateOfBirth) {
+        this.dateOfBirth = dateOfBirth;
     }
 }

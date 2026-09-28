@@ -59,4 +59,22 @@ public class PaymentController {
         PaymentVerificationResponse response = paymentService.verifyPayment(request, principal);
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * Records payment failure or cancellation for a Grocery Choice order.
+     */
+    @PostMapping("/fail")
+    public ResponseEntity<PaymentVerificationResponse> recordPaymentFailure(
+            @Valid @RequestBody CreatePaymentOrderRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required to update payment");
+        }
+        PaymentVerificationResponse response = paymentService.handlePaymentFailure(
+                request.getOrderId(),
+                "Payment was declined or cancelled",
+                principal
+        );
+        return ResponseEntity.ok(response);
+    }
 }

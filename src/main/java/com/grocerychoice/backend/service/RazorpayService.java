@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.grocerychoice.backend.exception.InvalidDataException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -40,14 +41,23 @@ public class RazorpayService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
+    @Autowired
     public RazorpayService(
             @Value("${razorpay.key.id:}") String keyId,
             @Value("${razorpay.key.secret:}") String keySecret,
             ObjectMapper objectMapper) {
+        this(keyId, keySecret, objectMapper, null);
+    }
+
+    public RazorpayService(
+            String keyId,
+            String keySecret,
+            ObjectMapper objectMapper,
+            HttpClient httpClient) {
         this.keyId = keyId != null ? keyId.trim() : "";
         this.keySecret = keySecret != null ? keySecret.trim() : "";
         this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newBuilder()
+        this.httpClient = httpClient != null ? httpClient : HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
