@@ -53,7 +53,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String fullName = (String) claims.get("fullName");
 
                 Role role = Role.valueOf(roleStr);
-                UserPrincipal principal = new UserPrincipal(userId, email, phone, fullName, role);
+                boolean primaryOwner = claims.get("primaryOwner") != null && Boolean.parseBoolean(claims.get("primaryOwner").toString());
+                String statusStr = (String) claims.get("status");
+                com.grocerychoice.backend.entity.UserStatus status = statusStr != null
+                        ? com.grocerychoice.backend.entity.UserStatus.valueOf(statusStr)
+                        : com.grocerychoice.backend.entity.UserStatus.ACTIVE;
+                String designation = (String) claims.get("designation");
+                String storeHub = (String) claims.get("storeHub");
+
+                // Establish authorities (ROLE_... and PERM_...)
+                java.util.List<org.springframework.security.core.GrantedAuthority> authorities = new java.util.ArrayList<>();
+                authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role.name()));
+
+                java.util.Set<String> perms = new java.util.HashSet<>();
+                if (primaryOwner) {
+                    perms.addAll(com.grocerychoice.backend.entity.Permission.allPermissions());
+                } else if (Role.OWNER.equals(role)) {
+                    perms.addAll(com.grocerychoice.backend.entity.Permission.defaultOwnerPermissions());
+                } else if (Role.ADMIN.equals(role)) {
+                    perms.addAll(com.grocerychoice.backend.entity.Permission.defaultAdminPermissions());
+                } else if (Role.STAFF.equals(role)) {
+                    perms.addAll(com.grocerychoice.backend.entity.Permission.defaultStaffPermissions());
+                }
+                for (String p : perms) {
+                    authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("PERM_" + p));
+                }
+
+                UserPrincipal principal = new UserPrincipal(
+                        userId, email, phone, fullName, role, primaryOwner, status, designation, storeHub, perms, authorities
+                );
 
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());

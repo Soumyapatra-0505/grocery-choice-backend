@@ -2,6 +2,7 @@ package com.grocerychoice.backend.entity;
 
 public enum Role {
     CUSTOMER,
-    OWNER,
-    ADMIN
+    STAFF,
+    ADMIN,
+    OWNER
 }

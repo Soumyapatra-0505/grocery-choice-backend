@@ -56,6 +56,10 @@ public class JwtTokenProvider {
             Map<String, Object> claims = new HashMap<>();
             claims.put("sub", String.valueOf(user.getId()));
             claims.put("role", user.getRole().name());
+            claims.put("primaryOwner", user.isPrimaryOwner());
+            claims.put("status", user.getStatus() != null ? user.getStatus().name() : "ACTIVE");
+            claims.put("designation", user.getDesignation());
+            claims.put("storeHub", user.getStoreHub());
             claims.put("email", user.getEmail());
             claims.put("phone", user.getPhone());
             claims.put("fullName", user.getFullName());

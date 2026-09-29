@@ -16,6 +16,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
     boolean existsByPhone(String phone);
     List<User> findByRole(Role role);
+    Optional<User> findFirstByPrimaryOwnerTrue();
+    Optional<User> findByPrimaryOwnerTrue();
+    List<User> findAllByPrimaryOwnerTrue();
+    List<User> findByRoleIn(java.util.Collection<Role> roles);
+    List<User> findByRoleInOrderByCreatedAtDesc(java.util.Collection<Role> roles);
 
     @org.springframework.data.jpa.repository.Query("SELECT u FROM User u WHERE LOWER(u.email) = LOWER(:identifier) OR u.phone = :identifier OR REPLACE(REPLACE(REPLACE(u.phone, ' ', ''), '-', ''), '+91', '') = :cleanPhone")
     Optional<User> findByIdentifier(@org.springframework.data.repository.query.Param("identifier") String identifier, @org.springframework.data.repository.query.Param("cleanPhone") String cleanPhone);

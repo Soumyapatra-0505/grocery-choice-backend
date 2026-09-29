@@ -87,13 +87,19 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/api/categories/**").hasAnyRole("OWNER", "ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/products/**").hasAnyRole("OWNER", "ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/products/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.PATCH, "/api/products/**").hasAnyRole("OWNER", "ADMIN")
+                .requestMatchers(HttpMethod.PATCH, "/api/products/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
                 .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasAnyRole("OWNER", "ADMIN")
 
-                // Owner Order Management Endpoints
-                .requestMatchers(HttpMethod.GET, "/api/orders").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.GET, "/api/orders/status/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.PATCH, "/api/orders/**/status").hasAnyRole("OWNER", "ADMIN")
+                // Owner & Staff Order Management Endpoints
+                .requestMatchers(HttpMethod.GET, "/api/orders").hasAnyRole("OWNER", "ADMIN", "STAFF")
+                .requestMatchers(HttpMethod.GET, "/api/orders/status/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
+                .requestMatchers(HttpMethod.PATCH, "/api/orders/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
+
+                // Staff & Ownership Management Endpoints
+                .requestMatchers("/api/staff/**").hasAnyRole("OWNER", "ADMIN")
+                .requestMatchers("/api/ownership/**").hasAnyRole("OWNER", "ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/designations/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
+                .requestMatchers("/api/designations/**").hasAnyRole("OWNER", "ADMIN")
 
                 // Authenticated Customer / User Endpoints
                 .requestMatchers(HttpMethod.POST, "/api/orders").authenticated()

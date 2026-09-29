@@ -105,8 +105,21 @@ public class DatabaseSeeder implements CommandLineRunner {
                 new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("Admin@123"),
                 Role.OWNER
             );
+            owner.setPrimaryOwner(true);
+            owner.setDesignation("Store Owner");
             owner = userRepository.save(owner);
-            log.info("Seeded default owner with ID: {} and email: {}", owner.getId(), owner.getEmail());
+            log.info("Seeded default Primary Owner with ID: {} and email: {}", owner.getId(), owner.getEmail());
+        } else if (userRepository.findByPrimaryOwnerTrue().isEmpty()) {
+            List<User> owners = userRepository.findByRole(Role.OWNER);
+            if (!owners.isEmpty()) {
+                User first = owners.get(0);
+                first.setPrimaryOwner(true);
+                if (first.getDesignation() == null || first.getDesignation().isBlank()) {
+                    first.setDesignation("Store Owner");
+                }
+                userRepository.save(first);
+                log.info("Designated existing owner {} as Primary Owner", first.getEmail());
+            }
         }
     }
 
@@ -120,6 +133,7 @@ public class DatabaseSeeder implements CommandLineRunner {
                 new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("Admin@123"),
                 Role.ADMIN
             );
+            admin.setDesignation("Store Manager");
             admin = userRepository.save(admin);
             log.info("Seeded default admin with ID: {} and email: {}", admin.getId(), admin.getEmail());
         }

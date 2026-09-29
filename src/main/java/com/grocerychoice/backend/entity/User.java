@@ -6,7 +6,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Entity
 @Table(name = "users")
@@ -33,6 +35,24 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role = Role.CUSTOMER;
+
+    @Column(name = "is_primary_owner", nullable = false)
+    private boolean primaryOwner = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserStatus status = UserStatus.ACTIVE;
+
+    @Column(length = 100)
+    private String designation;
+
+    @Column(name = "store_hub", length = 100)
+    private String storeHub = "Flagship Hub";
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_permissions", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "permission", length = 50)
+    private Set<String> customPermissions = new HashSet<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -175,11 +195,73 @@ public class User {
         return Role.CUSTOMER.equals(this.role);
     }
 
+    public boolean isStaff() {
+        return Role.STAFF.equals(this.role);
+    }
+
     public boolean isOwner() {
         return Role.OWNER.equals(this.role);
     }
 
     public boolean isAdmin() {
         return Role.ADMIN.equals(this.role);
+    }
+
+    public boolean isPrimaryOwner() {
+        return primaryOwner;
+    }
+
+    public void setPrimaryOwner(boolean primaryOwner) {
+        this.primaryOwner = primaryOwner;
+    }
+
+    public UserStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(UserStatus status) {
+        this.status = status != null ? status : UserStatus.ACTIVE;
+    }
+
+    public String getDesignation() {
+        return designation;
+    }
+
+    public void setDesignation(String designation) {
+        this.designation = designation;
+    }
+
+    public String getStoreHub() {
+        return storeHub;
+    }
+
+    public void setStoreHub(String storeHub) {
+        this.storeHub = storeHub;
+    }
+
+    public Set<String> getCustomPermissions() {
+        return customPermissions;
+    }
+
+    public void setCustomPermissions(Set<String> customPermissions) {
+        this.customPermissions = customPermissions != null ? customPermissions : new HashSet<>();
+    }
+
+    public Set<String> getEffectivePermissions() {
+        if (primaryOwner) {
+            return Permission.allPermissions();
+        }
+        Set<String> perms = new HashSet<>();
+        if (Role.OWNER.equals(role)) {
+            perms.addAll(Permission.defaultOwnerPermissions());
+        } else if (Role.ADMIN.equals(role)) {
+            perms.addAll(Permission.defaultAdminPermissions());
+        } else if (Role.STAFF.equals(role)) {
+            perms.addAll(Permission.defaultStaffPermissions());
+        }
+        if (customPermissions != null) {
+            perms.addAll(customPermissions);
+        }
+        return perms;
     }
 }
