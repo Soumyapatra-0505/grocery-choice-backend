@@ -211,40 +211,33 @@ public class StaffService {
         if (request.getPhone() != null) {
             String rawPhone = request.getPhone().trim();
             if (rawPhone.isEmpty()) {
-                if (user.getPhone() != null) {
-                    changedFields.add("phone");
-                    detailsBuilder.append("Phone: '").append(user.getPhone()).append("' -> null; ");
-                    user.setPhone(null);
-                }
-            } else {
-                String digits = rawPhone.replaceAll("\\D", "");
-                if (digits.length() == 12 && digits.startsWith("91")) {
-                    digits = digits.substring(2);
-                } else if (digits.length() == 11 && digits.startsWith("0")) {
-                    digits = digits.substring(1);
-                }
-                if (digits.length() != 10) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid phone number");
-                }
-                String formattedPhone = "+91 " + digits.substring(0, 5) + " " + digits.substring(5);
-
-                List<User> existingPhoneUsers = userRepository.findAllByCleanPhone(digits);
-                for (User u : existingPhoneUsers) {
-                    if (!u.getId().equals(user.getId())) {
-                        throw new ResponseStatusException(HttpStatus.CONFLICT, "Phone number already belongs to another account");
-                    }
-                }
-                Optional<User> byPhoneExact = userRepository.findByPhone(formattedPhone);
-                if (byPhoneExact.isPresent() && !byPhoneExact.get().getId().equals(user.getId())) {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Phone number already belongs to another account");
-                }
-
-                if (!formattedPhone.equals(user.getPhone())) {
-                    changedFields.add("phone");
-                    detailsBuilder.append("Phone: '").append(user.getPhone()).append("' -> '").append(formattedPhone).append("'; ");
-                    user.setPhone(formattedPhone);
-                }
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid phone number");
             }
+            String digits = rawPhone.replaceAll("\\D", "");
+            if (digits.length() == 13 && digits.startsWith("091")) {
+                digits = digits.substring(3);
+            } else if (digits.length() == 12 && digits.startsWith("91")) {
+                digits = digits.substring(2);
+            } else if (digits.length() == 11 && digits.startsWith("0")) {
+                digits = digits.substring(1);
+            }
+            if (digits.length() != 10) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid phone number");
+            }
+            String formattedPhone = "+91 " + digits.substring(0, 5) + " " + digits.substring(5);
+
+            List<User> existingPhoneUsers = userRepository.findAllByCleanPhone(digits);
+            if (!existingPhoneUsers.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Mobile number already exists");
+            }
+            Optional<User> byPhoneExact = userRepository.findByPhone(formattedPhone);
+            if (byPhoneExact.isPresent()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Mobile number already exists");
+            }
+
+            changedFields.add("phone");
+            detailsBuilder.append("Phone: '").append(user.getPhone()).append("' -> '").append(formattedPhone).append("'; ");
+            user.setPhone(formattedPhone);
         }
 
         // 4. Designation

@@ -493,8 +493,8 @@ class StaffAndOwnershipSecurityIntegrationTest {
     }
 
     @Test
-    @DisplayName("19. PUT /api/staff/{id}/contact: Duplicate phone rejected with 409 Conflict")
-    void testUpdateContact_DuplicatePhone() throws Exception {
+    @DisplayName("19a. PUT /api/staff/{id}/contact: Duplicate phone of another user rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_AnotherUser() throws Exception {
         UpdateContactRequest req = new UpdateContactRequest();
         req.setPhone(adminUser.getPhone()); // already taken by admin
 
@@ -503,7 +503,95 @@ class StaffAndOwnershipSecurityIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message", containsString("Phone number already belongs to another account")));
+                .andExpect(jsonPath("$.message", containsString("Mobile number already exists")));
+    }
+
+    @Test
+    @DisplayName("19b. PUT /api/staff/{id}/contact: Submitting target user's existing phone rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_SameUser() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone(staffUser.getPhone()); // already belongs to staffUser
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Mobile number already exists")));
+    }
+
+    @Test
+    @DisplayName("19c. PUT /api/staff/{id}/contact: Same phone with +91 formatting rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_Plus91Formatting() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("+919900000003");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Mobile number already exists")));
+    }
+
+    @Test
+    @DisplayName("19d. PUT /api/staff/{id}/contact: Same phone with spaces and dashes rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_SpacesAndDashes() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("  +91 99000-00003  ");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Mobile number already exists")));
+    }
+
+    @Test
+    @DisplayName("19e. PUT /api/staff/{id}/contact: Same phone with leading 0 rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_LeadingZero() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("09900000003");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Mobile number already exists")));
+    }
+
+    @Test
+    @DisplayName("19f. PUT /api/staff/{id}/contact: Same phone with leading 091 prefix rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_Leading091() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("0919900000003");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Mobile number already exists")));
+    }
+
+    @Test
+    @DisplayName("19g. PUT /api/staff/{id}/contact: When phone is null/omitted, other fields update successfully")
+    void testUpdateContact_PhoneOmitted_SavesOtherFields() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone(null);
+        req.setFullName("Updated Phone Omitted Staff");
+        req.setDesignation("Dispatch Manager");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Updated Phone Omitted Staff"))
+                .andExpect(jsonPath("$.phone").value(staffUser.getPhone()))
+                .andExpect(jsonPath("$.designation").value("Dispatch Manager"));
     }
 
     @Test

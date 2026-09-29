@@ -352,8 +352,8 @@ class StaffServiceTest {
     }
 
     @Test
-    @DisplayName("Duplicate phone is rejected with 409 Conflict")
-    void testUpdateContact_DuplicatePhoneRejected() {
+    @DisplayName("Existing phone belonging to another user is rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_AnotherUserRejected() {
         User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
         staff.setId(10L);
         User existingOther = new User("other@grocerychoice.com", "+91 98765 33333", "Other User", "hash", Role.CUSTOMER);
@@ -368,7 +368,125 @@ class StaffServiceTest {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
                 staffService.updateContact(10L, req, primaryOwnerPrincipal));
         assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
-        assertTrue(ex.getReason().contains("Phone number already belongs to another account"));
+        assertEquals("Mobile number already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Existing phone belonging to the same user is rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_SameUserRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findAllByCleanPhone("9876500000")).thenReturn(List.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("+91 98765 00000");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Mobile number already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Same phone with +91 formatting is rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_Plus91FormattingRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findAllByCleanPhone("9876500000")).thenReturn(List.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("+919876500000");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Mobile number already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Same phone with spaces and dashes is rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_SpacesAndDashesRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findAllByCleanPhone("9876500000")).thenReturn(List.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("  +91 98765-00000  ");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Mobile number already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Same phone with leading 0 is rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_LeadingZeroRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findAllByCleanPhone("9876500000")).thenReturn(List.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("09876500000");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Mobile number already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Same phone with 091 prefix is rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone_Leading091Rejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findAllByCleanPhone("9876500000")).thenReturn(List.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("0919876500000");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Mobile number already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("When phone is omitted (null), existing phone is preserved and other fields save successfully")
+    void testUpdateContact_PhoneOmitted_PreservesExistingPhone() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Updated Name Only Phone Preserved");
+        req.setPhone(null);
+        req.setDesignation("Floor Manager");
+
+        UserSummaryResponse res = staffService.updateContact(10L, req, primaryOwnerPrincipal);
+
+        assertEquals("Updated Name Only Phone Preserved", res.getFullName());
+        assertEquals("+91 98765 00000", res.getPhone());
+        assertEquals("Floor Manager", res.getDesignation());
+        verify(auditLogRepository, times(1)).save(any());
     }
 
     @Test
