@@ -252,8 +252,8 @@ class StaffServiceTest {
     }
 
     @Test
-    @DisplayName("Duplicate email is rejected with 409 Conflict")
-    void testUpdateContact_DuplicateEmailRejected() {
+    @DisplayName("Existing email belonging to another user is rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmail_AnotherUserRejected() {
         User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
         staff.setId(10L);
         User existingOther = new User("taken@grocerychoice.com", "+91 98765 99999", "Other User", "hash", Role.CUSTOMER);
@@ -268,7 +268,87 @@ class StaffServiceTest {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
                 staffService.updateContact(10L, req, primaryOwnerPrincipal));
         assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
-        assertTrue(ex.getReason().contains("Email already belongs to another account"));
+        assertEquals("Email address already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Existing email belonging to the same user is rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmail_SameUserRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findByEmailIgnoreCase("staff@grocerychoice.com")).thenReturn(Optional.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("staff@grocerychoice.com");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Email address already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Same email with different letter case is rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmail_DifferentCaseRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findByEmailIgnoreCase("staff@grocerychoice.com")).thenReturn(Optional.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("STAFF@GROCERYCHOICE.COM");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Email address already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Existing email with surrounding spaces is rejected with 409 Conflict after normalization")
+    void testUpdateContact_DuplicateEmail_SurroundingSpacesRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findByEmailIgnoreCase("staff@grocerychoice.com")).thenReturn(Optional.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("   staff@grocerychoice.com   ");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Email address already exists", ex.getReason());
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("When email is omitted (null), existing email is preserved and other fields save successfully")
+    void testUpdateContact_EmailOmitted_PreservesExistingEmail() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Updated Name Only");
+        req.setEmail(null);
+        req.setDesignation("Shift Lead");
+
+        UserSummaryResponse res = staffService.updateContact(10L, req, primaryOwnerPrincipal);
+
+        assertEquals("Updated Name Only", res.getFullName());
+        assertEquals("staff@grocerychoice.com", res.getEmail());
+        assertEquals("Shift Lead", res.getDesignation());
+        verify(auditLogRepository, times(1)).save(any());
     }
 
     @Test

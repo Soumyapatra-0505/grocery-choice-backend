@@ -419,8 +419,8 @@ class StaffAndOwnershipSecurityIntegrationTest {
     }
 
     @Test
-    @DisplayName("18. PUT /api/staff/{id}/contact: Duplicate email rejected with 409 Conflict")
-    void testUpdateContact_DuplicateEmail() throws Exception {
+    @DisplayName("18a. PUT /api/staff/{id}/contact: Duplicate email of another user rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmail_AnotherUser() throws Exception {
         UpdateContactRequest req = new UpdateContactRequest();
         req.setEmail(adminUser.getEmail()); // already taken by admin
 
@@ -429,7 +429,67 @@ class StaffAndOwnershipSecurityIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message", containsString("Email already belongs to another account")));
+                .andExpect(jsonPath("$.message", containsString("Email address already exists")));
+    }
+
+    @Test
+    @DisplayName("18b. PUT /api/staff/{id}/contact: Submitting target user's existing email rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmail_SameUser() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail(staffUser.getEmail()); // already belongs to staffUser
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Email address already exists")));
+    }
+
+    @Test
+    @DisplayName("18c. PUT /api/staff/{id}/contact: Same email with different letter case rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmail_DifferentCase() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail(staffUser.getEmail().toUpperCase());
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Email address already exists")));
+    }
+
+    @Test
+    @DisplayName("18d. PUT /api/staff/{id}/contact: Existing email with surrounding spaces rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmail_SurroundingSpaces() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("   " + staffUser.getEmail() + "   ");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Email address already exists")));
+    }
+
+    @Test
+    @DisplayName("18e. PUT /api/staff/{id}/contact: When email is null/omitted, other fields update successfully")
+    void testUpdateContact_EmailOmitted_SavesOtherFields() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail(null);
+        req.setFullName("Updated Name Only Staff");
+        req.setDesignation("Operations Lead");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Updated Name Only Staff"))
+                .andExpect(jsonPath("$.email").value(staffUser.getEmail()))
+                .andExpect(jsonPath("$.designation").value("Operations Lead"));
     }
 
     @Test

@@ -198,15 +198,13 @@ public class StaffService {
             if (!newEmail.matches("^[\\w!#$%&'*+/=?`{|}~^-]+(?:\\.[\\w!#$%&'*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,6}$")) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email address");
             }
-            if (!newEmail.equalsIgnoreCase(user.getEmail())) {
-                Optional<User> existingEmailUser = userRepository.findByEmailIgnoreCase(newEmail);
-                if (existingEmailUser.isPresent() && !existingEmailUser.get().getId().equals(user.getId())) {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already belongs to another account");
-                }
-                changedFields.add("email");
-                detailsBuilder.append("Email: '").append(user.getEmail()).append("' -> '").append(newEmail).append("'; ");
-                user.setEmail(newEmail);
+            Optional<User> existingEmailUser = userRepository.findByEmailIgnoreCase(newEmail);
+            if (existingEmailUser.isPresent()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Email address already exists");
             }
+            changedFields.add("email");
+            detailsBuilder.append("Email: '").append(user.getEmail()).append("' -> '").append(newEmail).append("'; ");
+            user.setEmail(newEmail);
         }
 
         // 3. Phone
@@ -332,7 +330,7 @@ public class StaffService {
         }
 
         // Changing another user's email is restricted to the Primary Owner
-        if (newEmail != null && !newEmail.equalsIgnoreCase(targetUser.getEmail())) {
+        if (newEmail != null) {
             if (!actor.isPrimaryOwner() && !isSelf) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the Primary Owner can change another user's email address");
             }
