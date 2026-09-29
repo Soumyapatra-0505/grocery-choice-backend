@@ -64,6 +64,18 @@ public class StaffController {
     }
 
     /**
+     * Updates staff contact information (email, phone, full name, designation, store hub).
+     */
+    @RequestMapping(value = "/{id}/contact", method = {RequestMethod.PUT, RequestMethod.PATCH})
+    public ResponseEntity<UserSummaryResponse> updateContact(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateContactRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        ensureCanManageStaff(principal);
+        return ResponseEntity.ok(staffService.updateContact(id, request, principal));
+    }
+
+    /**
      * Changes system role for a staff member.
      */
     @RequestMapping(value = "/{id}/role", method = {RequestMethod.PATCH, RequestMethod.PUT})

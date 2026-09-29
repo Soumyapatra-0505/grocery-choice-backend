@@ -38,6 +38,9 @@ class StaffAndOwnershipSecurityIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private com.grocerychoice.backend.repository.AuditLogRepository auditLogRepository;
+
     private User primaryOwner;
     private User secondaryOwner;
     private User adminUser;
@@ -385,5 +388,156 @@ class StaffAndOwnershipSecurityIntegrationTest {
                 .andExpect(content().string(not(containsString("password"))))
                 .andExpect(content().string(not(containsString("secret"))))
                 .andExpect(content().string(not(containsString("otp"))));
+    }
+
+    @Test
+    @DisplayName("17. PUT /api/staff/{id}/contact: Primary Owner can update staff email and phone")
+    void testUpdateContact_PrimaryOwnerSuccess() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Updated Staff Name");
+        req.setEmail("updated.staff@grocerychoice.com");
+        req.setPhone("+91 99000 88888");
+        req.setDesignation("Lead Associate");
+        req.setStoreHub("Flagship Hub");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(staffUser.getId()))
+                .andExpect(jsonPath("$.fullName").value("Updated Staff Name"))
+                .andExpect(jsonPath("$.email").value("updated.staff@grocerychoice.com"))
+                .andExpect(jsonPath("$.phone").value("+91 99000 88888"))
+                .andExpect(jsonPath("$.role").value("STAFF"))
+                .andExpect(jsonPath("$.designation").value("Lead Associate"));
+
+        // Verify audit log exists
+        boolean auditFound = auditLogRepository.findAll().stream()
+                .anyMatch(a -> "STAFF_CONTACT_UPDATED".equals(a.getAction()) && staffUser.getId().equals(a.getTargetId()));
+        org.junit.jupiter.api.Assertions.assertTrue(auditFound, "Expected STAFF_CONTACT_UPDATED audit log");
+    }
+
+    @Test
+    @DisplayName("18. PUT /api/staff/{id}/contact: Duplicate email rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmail() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail(adminUser.getEmail()); // already taken by admin
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Email already belongs to another account")));
+    }
+
+    @Test
+    @DisplayName("19. PUT /api/staff/{id}/contact: Duplicate phone rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhone() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone(adminUser.getPhone()); // already taken by admin
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("Phone number already belongs to another account")));
+    }
+
+    @Test
+    @DisplayName("20. PUT /api/staff/{id}/contact: Invalid email format rejected with 400 Bad Request")
+    void testUpdateContact_InvalidEmail() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("bad-email-format");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Invalid email address")));
+    }
+
+    @Test
+    @DisplayName("21. PUT /api/staff/{id}/contact: Invalid phone format rejected with 400 Bad Request")
+    void testUpdateContact_InvalidPhone() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("123");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", primaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Invalid phone number")));
+    }
+
+    @Test
+    @DisplayName("22. PUT /api/staff/{id}/contact: Non-Primary Owner cannot modify another Owner")
+    void testUpdateContact_NonPrimaryOwnerCannotModifyOwner() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Hacked Owner Name");
+
+        mockMvc.perform(put("/api/staff/" + primaryOwner.getId() + "/contact")
+                        .header("Authorization", secondaryOwnerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("23. PUT /api/staff/{id}/contact: Admin cannot modify Owner contact info")
+    void testUpdateContact_AdminCannotModifyOwner() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Admin Tampering");
+
+        mockMvc.perform(put("/api/staff/" + secondaryOwner.getId() + "/contact")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("24. PUT /api/staff/{id}/contact: Staff cannot modify another user's contact info")
+    void testUpdateContact_StaffCannotModifyOtherUser() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Staff Tampering");
+
+        mockMvc.perform(put("/api/staff/" + adminUser.getId() + "/contact")
+                        .header("Authorization", staffToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("25. PUT /api/staff/{id}/contact: Customer cannot access staff contact endpoint")
+    void testUpdateContact_CustomerAccessForbidden() throws Exception {
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Customer Hack");
+
+        mockMvc.perform(put("/api/staff/" + staffUser.getId() + "/contact")
+                        .header("Authorization", customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("26. PUT /api/auth/me: Existing self-profile update continues to work")
+    void testSelfProfileUpdate_ContinuesWorking() throws Exception {
+        UpdateProfileRequest profileReq = new UpdateProfileRequest();
+        profileReq.setFullName("Updated Customer Self");
+
+        mockMvc.perform(put("/api/auth/me")
+                        .header("Authorization", customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(profileReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Updated Customer Self"))
+                .andExpect(jsonPath("$.role").value("CUSTOMER"));
     }
 }

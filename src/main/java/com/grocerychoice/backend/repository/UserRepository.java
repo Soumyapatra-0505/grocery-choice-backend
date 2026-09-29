@@ -24,4 +24,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @org.springframework.data.jpa.repository.Query("SELECT u FROM User u WHERE LOWER(u.email) = LOWER(:identifier) OR u.phone = :identifier OR REPLACE(REPLACE(REPLACE(u.phone, ' ', ''), '-', ''), '+91', '') = :cleanPhone")
     Optional<User> findByIdentifier(@org.springframework.data.repository.query.Param("identifier") String identifier, @org.springframework.data.repository.query.Param("cleanPhone") String cleanPhone);
+
+    @org.springframework.data.jpa.repository.Query("SELECT u FROM User u WHERE REPLACE(REPLACE(REPLACE(u.phone, ' ', ''), '-', ''), '+91', '') = :cleanPhone")
+    List<User> findAllByCleanPhone(@org.springframework.data.repository.query.Param("cleanPhone") String cleanPhone);
 }

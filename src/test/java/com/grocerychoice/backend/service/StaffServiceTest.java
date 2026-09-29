@@ -1,6 +1,7 @@
 package com.grocerychoice.backend.service;
 
 import com.grocerychoice.backend.dto.CreateStaffRequest;
+import com.grocerychoice.backend.dto.UpdateContactRequest;
 import com.grocerychoice.backend.dto.UpdateStaffRequest;
 import com.grocerychoice.backend.dto.UserSummaryResponse;
 import com.grocerychoice.backend.entity.Role;
@@ -183,5 +184,221 @@ class StaffServiceTest {
         assertNull(res.getDesignation());
         assertEquals(5L, res.getId());
         verify(auditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Primary Owner can update another staff member's email")
+    void testUpdateContact_PrimaryOwnerCanChangeEmail() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findByEmailIgnoreCase("newstaff@grocerychoice.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("newstaff@grocerychoice.com");
+
+        UserSummaryResponse res = staffService.updateContact(10L, req, primaryOwnerPrincipal);
+
+        assertEquals("newstaff@grocerychoice.com", res.getEmail());
+        assertEquals(10L, res.getId());
+        assertEquals(Role.STAFF, res.getRole());
+        verify(auditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Primary Owner can update another staff member's phone")
+    void testUpdateContact_PrimaryOwnerCanChangePhone() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findAllByCleanPhone("9876511111")).thenReturn(List.of());
+        when(userRepository.findByPhone("+91 98765 11111")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("9876511111");
+
+        UserSummaryResponse res = staffService.updateContact(10L, req, primaryOwnerPrincipal);
+
+        assertEquals("+91 98765 11111", res.getPhone());
+        verify(auditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Primary Owner can update both email and phone simultaneously")
+    void testUpdateContact_PrimaryOwnerCanChangeBoth() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findByEmailIgnoreCase("both@grocerychoice.com")).thenReturn(Optional.empty());
+        when(userRepository.findAllByCleanPhone("9876522222")).thenReturn(List.of());
+        when(userRepository.findByPhone("+91 98765 22222")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Updated Name");
+        req.setEmail("both@grocerychoice.com");
+        req.setPhone("+91 98765 22222");
+
+        UserSummaryResponse res = staffService.updateContact(10L, req, primaryOwnerPrincipal);
+
+        assertEquals("Updated Name", res.getFullName());
+        assertEquals("both@grocerychoice.com", res.getEmail());
+        assertEquals("+91 98765 22222", res.getPhone());
+        assertEquals(10L, res.getId());
+        assertEquals(Role.STAFF, res.getRole());
+        verify(auditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Duplicate email is rejected with 409 Conflict")
+    void testUpdateContact_DuplicateEmailRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+        User existingOther = new User("taken@grocerychoice.com", "+91 98765 99999", "Other User", "hash", Role.CUSTOMER);
+        existingOther.setId(99L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findByEmailIgnoreCase("taken@grocerychoice.com")).thenReturn(Optional.of(existingOther));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("taken@grocerychoice.com");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Email already belongs to another account"));
+    }
+
+    @Test
+    @DisplayName("Duplicate phone is rejected with 409 Conflict")
+    void testUpdateContact_DuplicatePhoneRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+        User existingOther = new User("other@grocerychoice.com", "+91 98765 33333", "Other User", "hash", Role.CUSTOMER);
+        existingOther.setId(88L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+        when(userRepository.findAllByCleanPhone("9876533333")).thenReturn(List.of(existingOther));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("9876533333");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Phone number already belongs to another account"));
+    }
+
+    @Test
+    @DisplayName("Invalid email format is rejected with 400 Bad Request")
+    void testUpdateContact_InvalidEmailRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("not-an-email");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Invalid email address"));
+    }
+
+    @Test
+    @DisplayName("Invalid phone format is rejected with 400 Bad Request")
+    void testUpdateContact_InvalidPhoneRejected() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setPhone("12345");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, primaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Invalid phone number"));
+    }
+
+    @Test
+    @DisplayName("Non-Primary Owner cannot modify another Owner's contact information")
+    void testUpdateContact_NonPrimaryOwnerCannotModifyAnotherOwner() {
+        User secondaryOwner = new User("coowner@grocerychoice.com", "+91 98765 44444", "Co-Owner", "hash", Role.OWNER);
+        secondaryOwner.setId(20L);
+        secondaryOwner.setPrimaryOwner(false);
+
+        User targetOwner = new User("targetowner@grocerychoice.com", "+91 98765 55555", "Target Owner", "hash", Role.OWNER);
+        targetOwner.setId(21L);
+        targetOwner.setPrimaryOwner(false);
+
+        UserPrincipal secondaryOwnerPrincipal = UserPrincipal.create(secondaryOwner);
+
+        when(userRepository.findById(21L)).thenReturn(Optional.of(targetOwner));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Attempted Hack");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(21L, req, secondaryOwnerPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Owner cannot modify another Owner's contact information"));
+    }
+
+    @Test
+    @DisplayName("Admin cannot modify Owner contact information")
+    void testUpdateContact_AdminCannotModifyOwner() {
+        User targetOwner = new User("targetowner@grocerychoice.com", "+91 98765 55555", "Target Owner", "hash", Role.OWNER);
+        targetOwner.setId(21L);
+        targetOwner.setPrimaryOwner(false);
+
+        when(userRepository.findById(21L)).thenReturn(Optional.of(targetOwner));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Admin Attempt");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(21L, req, adminPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Admin cannot modify Owner contact information"));
+    }
+
+    @Test
+    @DisplayName("Admin cannot change another user's email address")
+    void testUpdateContact_AdminCannotChangeEmail() {
+        User staff = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staff.setId(10L);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(staff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setEmail("newemail@grocerychoice.com");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(10L, req, adminPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Only the Primary Owner can change another user's email address"));
+    }
+
+    @Test
+    @DisplayName("Staff cannot modify another user's contact information")
+    void testUpdateContact_StaffCannotModifyAnotherUser() {
+        User staffUser = new User("staff@grocerychoice.com", "+91 98765 00000", "Staff User", "hash", Role.STAFF);
+        staffUser.setId(10L);
+        UserPrincipal staffPrincipal = UserPrincipal.create(staffUser);
+
+        User targetStaff = new User("otherstaff@grocerychoice.com", "+91 98765 11111", "Other Staff", "hash", Role.STAFF);
+        targetStaff.setId(11L);
+
+        when(userRepository.findById(11L)).thenReturn(Optional.of(targetStaff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Staff Attempt");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(11L, req, staffPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, ex.getStatusCode());
     }
 }

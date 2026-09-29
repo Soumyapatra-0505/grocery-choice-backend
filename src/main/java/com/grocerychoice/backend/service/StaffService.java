@@ -1,6 +1,7 @@
 package com.grocerychoice.backend.service;
 
 import com.grocerychoice.backend.dto.CreateStaffRequest;
+import com.grocerychoice.backend.dto.UpdateContactRequest;
 import com.grocerychoice.backend.dto.UpdateStaffRequest;
 import com.grocerychoice.backend.dto.UserSummaryResponse;
 import com.grocerychoice.backend.entity.*;
@@ -154,40 +155,188 @@ public class StaffService {
 
     @Transactional
     public UserSummaryResponse updateStaff(Long id, UpdateStaffRequest request, UserPrincipal actor) {
+        UpdateContactRequest contactReq = new UpdateContactRequest(
+                request.getFullName(),
+                request.getEmail(),
+                request.getPhone(),
+                request.getDesignation(),
+                request.getStoreHub()
+        );
+        return updateContact(id, contactReq, actor);
+    }
+
+    @Transactional
+    public UserSummaryResponse updateContact(Long id, UpdateContactRequest request, UserPrincipal actor) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Staff member not found with ID: " + id));
 
-        if (user.isPrimaryOwner() && (actor == null || !actor.isPrimaryOwner())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the Primary Owner can edit their own profile");
+        String targetEmail = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : null;
+        validateContactUpdateAuthorization(user, targetEmail, actor);
+
+        List<String> changedFields = new java.util.ArrayList<>();
+        StringBuilder detailsBuilder = new StringBuilder();
+
+        // 1. Full Name
+        if (request.getFullName() != null) {
+            String newName = request.getFullName().trim();
+            if (newName.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Full name cannot be blank");
+            }
+            if (!newName.equals(user.getFullName())) {
+                changedFields.add("fullName");
+                detailsBuilder.append("Name: '").append(user.getFullName()).append("' -> '").append(newName).append("'; ");
+                user.setFullName(newName);
+            }
         }
 
-        if (request.getFullName() != null && !request.getFullName().isBlank()) {
-            user.setFullName(request.getFullName().trim());
+        // 2. Email
+        if (request.getEmail() != null) {
+            String newEmail = request.getEmail().trim().toLowerCase();
+            if (newEmail.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email address cannot be empty");
+            }
+            if (!newEmail.matches("^[\\w!#$%&'*+/=?`{|}~^-]+(?:\\.[\\w!#$%&'*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,6}$")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email address");
+            }
+            if (!newEmail.equalsIgnoreCase(user.getEmail())) {
+                Optional<User> existingEmailUser = userRepository.findByEmailIgnoreCase(newEmail);
+                if (existingEmailUser.isPresent() && !existingEmailUser.get().getId().equals(user.getId())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already belongs to another account");
+                }
+                changedFields.add("email");
+                detailsBuilder.append("Email: '").append(user.getEmail()).append("' -> '").append(newEmail).append("'; ");
+                user.setEmail(newEmail);
+            }
         }
+
+        // 3. Phone
         if (request.getPhone() != null) {
-            user.setPhone(request.getPhone().trim());
+            String rawPhone = request.getPhone().trim();
+            if (rawPhone.isEmpty()) {
+                if (user.getPhone() != null) {
+                    changedFields.add("phone");
+                    detailsBuilder.append("Phone: '").append(user.getPhone()).append("' -> null; ");
+                    user.setPhone(null);
+                }
+            } else {
+                String digits = rawPhone.replaceAll("\\D", "");
+                if (digits.length() == 12 && digits.startsWith("91")) {
+                    digits = digits.substring(2);
+                } else if (digits.length() == 11 && digits.startsWith("0")) {
+                    digits = digits.substring(1);
+                }
+                if (digits.length() != 10) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid phone number");
+                }
+                String formattedPhone = "+91 " + digits.substring(0, 5) + " " + digits.substring(5);
+
+                List<User> existingPhoneUsers = userRepository.findAllByCleanPhone(digits);
+                for (User u : existingPhoneUsers) {
+                    if (!u.getId().equals(user.getId())) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "Phone number already belongs to another account");
+                    }
+                }
+                Optional<User> byPhoneExact = userRepository.findByPhone(formattedPhone);
+                if (byPhoneExact.isPresent() && !byPhoneExact.get().getId().equals(user.getId())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Phone number already belongs to another account");
+                }
+
+                if (!formattedPhone.equals(user.getPhone())) {
+                    changedFields.add("phone");
+                    detailsBuilder.append("Phone: '").append(user.getPhone()).append("' -> '").append(formattedPhone).append("'; ");
+                    user.setPhone(formattedPhone);
+                }
+            }
         }
+
+        // 4. Designation
         if (request.getDesignation() != null) {
-            user.setDesignation(request.getDesignation().trim());
+            String newDesignation = request.getDesignation().trim().isEmpty() ? null : request.getDesignation().trim();
+            if (!java.util.Objects.equals(newDesignation, user.getDesignation())) {
+                changedFields.add("designation");
+                detailsBuilder.append("Designation: '").append(user.getDesignation()).append("' -> '").append(newDesignation).append("'; ");
+                user.setDesignation(newDesignation);
+            }
         }
+
+        // 5. Store Hub
         if (request.getStoreHub() != null) {
-            user.setStoreHub(request.getStoreHub().trim());
+            String newStoreHub = request.getStoreHub().trim().isEmpty() ? null : request.getStoreHub().trim();
+            if (!java.util.Objects.equals(newStoreHub, user.getStoreHub())) {
+                changedFields.add("storeHub");
+                detailsBuilder.append("StoreHub: '").append(user.getStoreHub()).append("' -> '").append(newStoreHub).append("'; ");
+                user.setStoreHub(newStoreHub);
+            }
         }
 
         User saved = userRepository.save(user);
 
-        auditLogRepository.save(new AuditLog(
-                "STAFF_UPDATED",
-                actor != null ? actor.getId() : null,
-                actor != null ? actor.getEmail() : "system",
-                actor != null ? actor.getFullName() : "System",
-                saved.getId(),
-                saved.getEmail(),
-                saved.getFullName(),
-                "Updated details for: " + saved.getFullName()
-        ));
+        if (!changedFields.isEmpty()) {
+            String logDetails = "Updated contact info for " + saved.getFullName() +
+                    ". Changed fields: [" + String.join(", ", changedFields) + "]. " + detailsBuilder.toString();
+            if (logDetails.length() > 950) {
+                logDetails = logDetails.substring(0, 950) + "...";
+            }
+            auditLogRepository.save(new AuditLog(
+                    "STAFF_CONTACT_UPDATED",
+                    actor != null ? actor.getId() : null,
+                    actor != null ? actor.getEmail() : "system",
+                    actor != null ? actor.getFullName() : "System",
+                    saved.getId(),
+                    saved.getEmail(),
+                    saved.getFullName(),
+                    logDetails
+            ));
+            log.info("Contact updated for user ID: {} by actor: {}. Changed: {}", saved.getId(), actor != null ? actor.getEmail() : "system", changedFields);
+        }
 
         return UserSummaryResponse.fromUser(saved);
+    }
+
+    private void validateContactUpdateAuthorization(User targetUser, String newEmail, UserPrincipal actor) {
+        if (actor == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+
+        boolean isSelf = actor.getId().equals(targetUser.getId());
+
+        // CUSTOMER or STAFF cannot modify any staff contact information
+        if (actor.getRole() == Role.CUSTOMER || actor.getRole() == Role.STAFF) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to modify this account");
+        }
+
+        // Target is Primary Owner: Only the Primary Owner can edit their own profile
+        if (targetUser.isPrimaryOwner()) {
+            if (!actor.isPrimaryOwner()) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to modify the Primary Owner's account");
+            }
+        }
+
+        // Target is non-primary OWNER
+        if (targetUser.getRole() == Role.OWNER && !targetUser.isPrimaryOwner()) {
+            if (actor.isAdmin()) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin cannot modify Owner contact information");
+            }
+            if (!actor.isPrimaryOwner() && !isSelf) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Owner cannot modify another Owner's contact information");
+            }
+        }
+
+        // Target is ADMIN
+        if (targetUser.getRole() == Role.ADMIN) {
+            if (actor.isAdmin() && !isSelf) {
+                if (!actor.isPrimaryOwner() && !actor.isOwner() && !actor.hasPermission(Permission.MANAGE_ADMINS)) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions to modify an Admin account");
+                }
+            }
+        }
+
+        // Changing another user's email is restricted to the Primary Owner
+        if (newEmail != null && !newEmail.equalsIgnoreCase(targetUser.getEmail())) {
+            if (!actor.isPrimaryOwner() && !isSelf) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the Primary Owner can change another user's email address");
+            }
+        }
     }
 
     @Transactional
