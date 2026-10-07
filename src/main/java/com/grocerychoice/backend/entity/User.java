@@ -199,6 +199,10 @@ public class User {
         return Role.STAFF.equals(this.role);
     }
 
+    public boolean isDelivery() {
+        return Role.DELIVERY.equals(this.role);
+    }
+
     public boolean isOwner() {
         return Role.OWNER.equals(this.role);
     }
@@ -258,6 +262,8 @@ public class User {
             perms.addAll(Permission.defaultAdminPermissions());
         } else if (Role.STAFF.equals(role)) {
             perms.addAll(Permission.defaultStaffPermissions());
+        } else if (Role.DELIVERY.equals(role)) {
+            perms.addAll(Permission.defaultDeliveryPermissions());
         }
         if (customPermissions != null) {
             perms.addAll(customPermissions);

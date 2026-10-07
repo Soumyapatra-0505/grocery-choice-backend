@@ -100,6 +100,10 @@ public class UserPrincipal implements UserDetails {
         return Role.STAFF.equals(this.role);
     }
 
+    public boolean isDelivery() {
+        return Role.DELIVERY.equals(this.role);
+    }
+
     public boolean isOwner() {
         return Role.OWNER.equals(this.role);
     }

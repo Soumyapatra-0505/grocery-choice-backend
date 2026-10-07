@@ -32,4 +32,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     @Query("SELECT o FROM Order o LEFT JOIN FETCH o.orderItems WHERE o.orderNumber = :orderNumber")
     Optional<Order> findByOrderNumberWithItems(@Param("orderNumber") String orderNumber);
+
+    List<Order> findByDeliveryPartnerIdOrderByCreatedAtDesc(Long deliveryPartnerId);
+
+    List<Order> findByDeliveryPartnerIdAndStatusOrderByCreatedAtDesc(Long deliveryPartnerId, OrderStatus status);
+
+    List<Order> findByDeliveryPartnerIdAndAcceptedAtIsNullOrderByCreatedAtDesc(Long deliveryPartnerId);
+
+    List<Order> findByDeliveryPartnerIdAndStatusInOrderByCreatedAtDesc(Long deliveryPartnerId, java.util.Collection<OrderStatus> statuses);
 }

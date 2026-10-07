@@ -1,11 +1,14 @@
 package com.grocerychoice.backend.controller;
 
 import com.grocerychoice.backend.dto.CreateOrderRequest;
+import com.grocerychoice.backend.dto.DeliveryAssignmentRequest;
 import com.grocerychoice.backend.dto.OrderResponse;
 import com.grocerychoice.backend.dto.OrderStatusUpdateRequest;
+import com.grocerychoice.backend.dto.UserSummaryResponse;
 import com.grocerychoice.backend.entity.OrderStatus;
 import com.grocerychoice.backend.entity.Role;
 import com.grocerychoice.backend.security.UserPrincipal;
+import com.grocerychoice.backend.service.DeliveryAssignmentService;
 import com.grocerychoice.backend.service.OrderService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -21,9 +24,11 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    private final DeliveryAssignmentService deliveryAssignmentService;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, DeliveryAssignmentService deliveryAssignmentService) {
         this.orderService = orderService;
+        this.deliveryAssignmentService = deliveryAssignmentService;
     }
 
     /**
@@ -136,5 +141,26 @@ public class OrderController {
             }
         }
         return ResponseEntity.ok(orderService.cancelOrder(id));
+    }
+
+    /**
+     * Get eligible delivery partners for order assignment.
+     * Allowed: OWNER, ADMIN, STAFF.
+     */
+    @GetMapping("/eligible-delivery-partners")
+    public ResponseEntity<List<UserSummaryResponse>> getEligibleDeliveryPartners() {
+        return ResponseEntity.ok(deliveryAssignmentService.getEligibleDeliveryPartners());
+    }
+
+    /**
+     * Assign or reassign a delivery partner to an order.
+     * Allowed: OWNER, ADMIN, STAFF.
+     */
+    @PostMapping("/{id}/delivery-assignment")
+    public ResponseEntity<OrderResponse> assignDeliveryPartner(
+            @PathVariable Long id,
+            @Valid @RequestBody DeliveryAssignmentRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(deliveryAssignmentService.assignDeliveryPartner(id, request.getDeliveryUserId(), principal));
     }
 }

@@ -599,4 +599,122 @@ class StaffServiceTest {
                 staffService.updateContact(11L, req, staffPrincipal));
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, ex.getStatusCode());
     }
+
+    @Test
+    @DisplayName("Primary Owner can create new DELIVERY account")
+    void testCreateStaff_DeliveryRole_ByOwner() {
+        CreateStaffRequest req = new CreateStaffRequest();
+        req.setFullName("Ramesh Delivery");
+        req.setEmail("ramesh@grocerychoice.com");
+        req.setPhone("+91 91234 99999");
+        req.setRole(Role.DELIVERY);
+        req.setDesignation("Delivery Partner");
+
+        when(userRepository.findByEmailIgnoreCase("ramesh@grocerychoice.com")).thenReturn(Optional.empty());
+        when(userRepository.findByPhone("+91 91234 99999")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(30L);
+            return u;
+        });
+
+        UserSummaryResponse response = staffService.createStaff(req, primaryOwnerPrincipal);
+
+        assertNotNull(response);
+        assertEquals("Ramesh Delivery", response.getFullName());
+        assertEquals(Role.DELIVERY, response.getRole());
+        assertEquals("Delivery Partner", response.getDesignation());
+        verify(auditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Admin can create new DELIVERY account")
+    void testCreateStaff_DeliveryRole_ByAdmin() {
+        CreateStaffRequest req = new CreateStaffRequest();
+        req.setFullName("Suresh Delivery");
+        req.setEmail("suresh@grocerychoice.com");
+        req.setPhone("+91 91234 88888");
+        req.setRole(Role.DELIVERY);
+        req.setDesignation("Delivery Fleet");
+
+        when(userRepository.findByEmailIgnoreCase("suresh@grocerychoice.com")).thenReturn(Optional.empty());
+        when(userRepository.findByPhone("+91 91234 88888")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(31L);
+            return u;
+        });
+
+        UserSummaryResponse response = staffService.createStaff(req, adminPrincipal);
+
+        assertNotNull(response);
+        assertEquals("Suresh Delivery", response.getFullName());
+        assertEquals(Role.DELIVERY, response.getRole());
+        verify(auditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Owner can change existing user role to DELIVERY")
+    void testChangeRole_ToDelivery_ByOwner() {
+        User staff = new User("staff2@grocerychoice.com", "+91 98765 22222", "Staff Member", "hash", Role.STAFF);
+        staff.setId(32L);
+        when(userRepository.findById(32L)).thenReturn(Optional.of(staff));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserSummaryResponse res = staffService.changeRole(32L, Role.DELIVERY, primaryOwnerPrincipal);
+
+        assertEquals(Role.DELIVERY, res.getRole());
+        verify(auditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Admin can change existing user role to DELIVERY")
+    void testChangeRole_ToDelivery_ByAdmin() {
+        User staff = new User("staff3@grocerychoice.com", "+91 98765 33333", "Staff Member 3", "hash", Role.STAFF);
+        staff.setId(33L);
+        when(userRepository.findById(33L)).thenReturn(Optional.of(staff));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserSummaryResponse res = staffService.changeRole(33L, Role.DELIVERY, adminPrincipal);
+
+        assertEquals(Role.DELIVERY, res.getRole());
+        verify(auditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Delivery user cannot modify staff contact information")
+    void testUpdateContact_DeliveryCannotModifyStaff() {
+        User deliveryUser = new User("delivery@grocerychoice.com", "+91 98765 66666", "Delivery Guy", "hash", Role.DELIVERY);
+        deliveryUser.setId(34L);
+        UserPrincipal deliveryPrincipal = UserPrincipal.create(deliveryUser);
+
+        User targetStaff = new User("target@grocerychoice.com", "+91 98765 77777", "Target Staff", "hash", Role.STAFF);
+        targetStaff.setId(35L);
+
+        when(userRepository.findById(35L)).thenReturn(Optional.of(targetStaff));
+
+        UpdateContactRequest req = new UpdateContactRequest();
+        req.setFullName("Delivery Hack Attempt");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.updateContact(35L, req, deliveryPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Delivery user cannot change staff roles")
+    void testChangeRole_DeliveryCannotChangeRoles() {
+        User deliveryUser = new User("delivery@grocerychoice.com", "+91 98765 66666", "Delivery Guy", "hash", Role.DELIVERY);
+        deliveryUser.setId(34L);
+        UserPrincipal deliveryPrincipal = UserPrincipal.create(deliveryUser);
+
+        User targetStaff = new User("target@grocerychoice.com", "+91 98765 77777", "Target Staff", "hash", Role.STAFF);
+        targetStaff.setId(35L);
+
+        when(userRepository.findById(35L)).thenReturn(Optional.of(targetStaff));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                staffService.changeRole(35L, Role.ADMIN, deliveryPrincipal));
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, ex.getStatusCode());
+    }
 }

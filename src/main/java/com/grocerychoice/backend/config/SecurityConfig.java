@@ -93,6 +93,8 @@ public class SecurityConfig {
                 // Owner & Staff Order Management Endpoints
                 .requestMatchers(HttpMethod.GET, "/api/orders").hasAnyRole("OWNER", "ADMIN", "STAFF")
                 .requestMatchers(HttpMethod.GET, "/api/orders/status/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
+                .requestMatchers(HttpMethod.GET, "/api/orders/eligible-delivery-partners").hasAnyRole("OWNER", "ADMIN", "STAFF")
+                .requestMatchers(HttpMethod.POST, "/api/orders/*/delivery-assignment").hasAnyRole("OWNER", "ADMIN", "STAFF")
                 .requestMatchers(HttpMethod.PATCH, "/api/orders/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
 
                 // Staff & Ownership Management Endpoints
@@ -100,6 +102,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/ownership/**").hasAnyRole("OWNER", "ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/designations/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
                 .requestMatchers("/api/designations/**").hasAnyRole("OWNER", "ADMIN")
+
+                // Delivery Operations Endpoints (DELIVERY role only for delivery orders)
+                .requestMatchers("/api/delivery/orders/**").hasRole("DELIVERY")
+                .requestMatchers("/api/delivery/**").hasAnyRole("OWNER", "ADMIN", "STAFF", "DELIVERY")
 
                 // Authenticated Customer / User Endpoints
                 .requestMatchers(HttpMethod.POST, "/api/orders").authenticated()

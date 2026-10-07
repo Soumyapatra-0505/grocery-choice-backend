@@ -21,6 +21,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findAllByPrimaryOwnerTrue();
     List<User> findByRoleIn(java.util.Collection<Role> roles);
     List<User> findByRoleInOrderByCreatedAtDesc(java.util.Collection<Role> roles);
+    List<User> findByRoleAndStatusOrderByFullNameAsc(Role role, com.grocerychoice.backend.entity.UserStatus status);
 
     @org.springframework.data.jpa.repository.Query("SELECT u FROM User u WHERE LOWER(u.email) = LOWER(:identifier) OR u.phone = :identifier OR REPLACE(REPLACE(REPLACE(u.phone, ' ', ''), '-', ''), '+91', '') = :cleanPhone")
     Optional<User> findByIdentifier(@org.springframework.data.repository.query.Param("identifier") String identifier, @org.springframework.data.repository.query.Param("cleanPhone") String cleanPhone);

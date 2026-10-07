@@ -29,6 +29,21 @@ public class OrderResponse {
     private String deliverySlot;
     private String razorpayOrderId;
     private String razorpayPaymentId;
+    private Long assignedDeliveryPartnerId;
+    private String assignedDeliveryPartnerName;
+    private String assignedDeliveryPartnerPhone;
+    private LocalDateTime assignedAt;
+    private LocalDateTime acceptedAt;
+    private LocalDateTime pickedUpAt;
+    private LocalDateTime deliveredAt;
+    private String deliveryNotes;
+    private String deliveryOtp;
+    private Boolean deliveryOtpVerified;
+    private Boolean codCollected;
+    private LocalDateTime codCollectedAt;
+    private Double deliveryAddressLatitude;
+    private Double deliveryAddressLongitude;
+    private String deliveryAddressLandmark;
     private List<OrderItemResponse> items = new ArrayList<>();
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -104,6 +119,25 @@ public class OrderResponse {
         );
         resp.setRazorpayOrderId(order.getRazorpayOrderId());
         resp.setRazorpayPaymentId(order.getRazorpayPaymentId());
+        if (order.getDeliveryPartner() != null) {
+            resp.setAssignedDeliveryPartnerId(order.getDeliveryPartner().getId());
+            resp.setAssignedDeliveryPartnerName(order.getDeliveryPartner().getFullName());
+            resp.setAssignedDeliveryPartnerPhone(order.getDeliveryPartner().getPhone());
+        }
+        resp.setAssignedAt(order.getAssignedAt());
+        resp.setAcceptedAt(order.getAcceptedAt());
+        resp.setPickedUpAt(order.getPickedUpAt());
+        resp.setDeliveredAt(order.getDeliveredAt());
+        resp.setDeliveryNotes(order.getDeliveryNotes());
+        resp.setDeliveryOtp(order.getDeliveryOtp());
+        resp.setDeliveryOtpVerified(order.getDeliveryOtpVerifiedAt() != null);
+        resp.setCodCollected(order.getCodCollected() != null ? order.getCodCollected() : false);
+        resp.setCodCollectedAt(order.getCodCollectedAt());
+        if (order.getDeliveryAddress() != null) {
+            resp.setDeliveryAddressLatitude(order.getDeliveryAddress().getLatitude());
+            resp.setDeliveryAddressLongitude(order.getDeliveryAddress().getLongitude());
+            resp.setDeliveryAddressLandmark(order.getDeliveryAddress().getLandmark());
+        }
         return resp;
     }
 
@@ -275,5 +309,133 @@ public class OrderResponse {
 
     public void setRazorpayPaymentId(String razorpayPaymentId) {
         this.razorpayPaymentId = razorpayPaymentId;
+    }
+
+    public Long getAssignedDeliveryPartnerId() {
+        return assignedDeliveryPartnerId;
+    }
+
+    public void setAssignedDeliveryPartnerId(Long assignedDeliveryPartnerId) {
+        this.assignedDeliveryPartnerId = assignedDeliveryPartnerId;
+    }
+
+    public String getAssignedDeliveryPartnerName() {
+        return assignedDeliveryPartnerName;
+    }
+
+    public void setAssignedDeliveryPartnerName(String assignedDeliveryPartnerName) {
+        this.assignedDeliveryPartnerName = assignedDeliveryPartnerName;
+    }
+
+    public String getAssignedDeliveryPartnerPhone() {
+        return assignedDeliveryPartnerPhone;
+    }
+
+    public void setAssignedDeliveryPartnerPhone(String assignedDeliveryPartnerPhone) {
+        this.assignedDeliveryPartnerPhone = assignedDeliveryPartnerPhone;
+    }
+
+    public LocalDateTime getAssignedAt() {
+        return assignedAt;
+    }
+
+    public void setAssignedAt(LocalDateTime assignedAt) {
+        this.assignedAt = assignedAt;
+    }
+
+    public LocalDateTime getAcceptedAt() {
+        return acceptedAt;
+    }
+
+    public void setAcceptedAt(LocalDateTime acceptedAt) {
+        this.acceptedAt = acceptedAt;
+    }
+
+    /**
+     * Sanitizes response by clearing deliveryOtp so that riders cannot see the OTP code.
+     */
+    public OrderResponse maskDeliveryOtp() {
+        this.deliveryOtp = null;
+        return this;
+    }
+
+    public LocalDateTime getPickedUpAt() {
+        return pickedUpAt;
+    }
+
+    public void setPickedUpAt(LocalDateTime pickedUpAt) {
+        this.pickedUpAt = pickedUpAt;
+    }
+
+    public LocalDateTime getDeliveredAt() {
+        return deliveredAt;
+    }
+
+    public void setDeliveredAt(LocalDateTime deliveredAt) {
+        this.deliveredAt = deliveredAt;
+    }
+
+    public String getDeliveryNotes() {
+        return deliveryNotes;
+    }
+
+    public void setDeliveryNotes(String deliveryNotes) {
+        this.deliveryNotes = deliveryNotes;
+    }
+
+    public String getDeliveryOtp() {
+        return deliveryOtp;
+    }
+
+    public void setDeliveryOtp(String deliveryOtp) {
+        this.deliveryOtp = deliveryOtp;
+    }
+
+    public Boolean getDeliveryOtpVerified() {
+        return deliveryOtpVerified;
+    }
+
+    public void setDeliveryOtpVerified(Boolean deliveryOtpVerified) {
+        this.deliveryOtpVerified = deliveryOtpVerified;
+    }
+
+    public Boolean getCodCollected() {
+        return codCollected;
+    }
+
+    public void setCodCollected(Boolean codCollected) {
+        this.codCollected = codCollected;
+    }
+
+    public LocalDateTime getCodCollectedAt() {
+        return codCollectedAt;
+    }
+
+    public void setCodCollectedAt(LocalDateTime codCollectedAt) {
+        this.codCollectedAt = codCollectedAt;
+    }
+
+    public Double getDeliveryAddressLatitude() {
+        return deliveryAddressLatitude;
+    }
+
+    public void setDeliveryAddressLatitude(Double deliveryAddressLatitude) {
+        this.deliveryAddressLatitude = deliveryAddressLatitude;
+    }
+
+    public Double getDeliveryAddressLongitude() {
+        return deliveryAddressLongitude;
+    }
+
+    public void setDeliveryAddressLongitude(Double deliveryAddressLongitude) {
+        this.deliveryAddressLongitude = deliveryAddressLongitude;
+    }
+
+    public String getDeliveryAddressLandmark() {
+        return deliveryAddressLandmark;
+    }
+
+    public void setDeliveryAddressLandmark(String deliveryAddressLandmark) {
+        this.deliveryAddressLandmark = deliveryAddressLandmark;
     }
 }

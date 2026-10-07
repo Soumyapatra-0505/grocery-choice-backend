@@ -43,7 +43,7 @@ public class StaffService {
     @Transactional(readOnly = true)
     public List<UserSummaryResponse> getAllStaffMembers() {
         List<User> staff = userRepository.findByRoleInOrderByCreatedAtDesc(
-                List.of(Role.OWNER, Role.ADMIN, Role.STAFF)
+                List.of(Role.OWNER, Role.ADMIN, Role.STAFF, Role.DELIVERY)
         );
         return staff.stream()
                 .map(UserSummaryResponse::fromUser)
@@ -60,7 +60,7 @@ public class StaffService {
     @Transactional
     public UserSummaryResponse createStaff(CreateStaffRequest request, UserPrincipal actor) {
         if (request.getRole() == null || request.getRole() == Role.CUSTOMER) {
-            throw new InvalidDataException("A valid system role (STAFF, ADMIN, or OWNER) is required");
+            throw new InvalidDataException("A valid system role (STAFF, DELIVERY, ADMIN, or OWNER) is required");
         }
 
         // Security check for role assignment
@@ -291,8 +291,8 @@ public class StaffService {
 
         boolean isSelf = actor.getId().equals(targetUser.getId());
 
-        // CUSTOMER or STAFF cannot modify any staff contact information
-        if (actor.getRole() == Role.CUSTOMER || actor.getRole() == Role.STAFF) {
+        // CUSTOMER, STAFF, or DELIVERY cannot modify any staff contact information
+        if (actor.getRole() == Role.CUSTOMER || actor.getRole() == Role.STAFF || actor.getRole() == Role.DELIVERY) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to modify this account");
         }
 
@@ -346,6 +346,13 @@ public class StaffService {
         Role previousRole = user.getRole();
         if (previousRole == newRole) {
             return UserSummaryResponse.fromUser(user);
+        }
+
+        // Security check: DELIVERY, STAFF, or CUSTOMER cannot change staff roles
+        if (actor != null && (actor.getRole() == Role.DELIVERY || actor.getRole() == Role.STAFF || actor.getRole() == Role.CUSTOMER)) {
+            if (!actor.hasPermission(Permission.MANAGE_STAFF)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions to change staff roles");
+            }
         }
 
         // Promoting to OWNER requires Primary Owner

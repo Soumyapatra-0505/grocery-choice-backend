@@ -63,6 +63,37 @@ public class Order {
     @Column(name = "delivery_slot", length = 100)
     private String deliverySlot;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_delivery_user_id")
+    private User deliveryPartner;
+
+    @Column(name = "assigned_at")
+    private LocalDateTime assignedAt;
+
+    @Column(name = "accepted_at")
+    private LocalDateTime acceptedAt;
+
+    @Column(name = "picked_up_at")
+    private LocalDateTime pickedUpAt;
+
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
+
+    @Column(name = "delivery_notes", length = 500)
+    private String deliveryNotes;
+
+    @Column(name = "delivery_otp", length = 10)
+    private String deliveryOtp;
+
+    @Column(name = "delivery_otp_verified_at")
+    private LocalDateTime deliveryOtpVerifiedAt;
+
+    @Column(name = "cod_collected")
+    private Boolean codCollected = false;
+
+    @Column(name = "cod_collected_at")
+    private LocalDateTime codCollectedAt;
+
     @Column(name = "razorpay_order_id", length = 100)
     private String razorpayOrderId;
 
@@ -306,5 +337,89 @@ public class Order {
 
     public void setNotificationSentAt(LocalDateTime notificationSentAt) {
         this.notificationSentAt = notificationSentAt;
+    }
+
+    public User getDeliveryPartner() {
+        return deliveryPartner;
+    }
+
+    public void setDeliveryPartner(User deliveryPartner) {
+        this.deliveryPartner = deliveryPartner;
+    }
+
+    public LocalDateTime getAssignedAt() {
+        return assignedAt;
+    }
+
+    public void setAssignedAt(LocalDateTime assignedAt) {
+        this.assignedAt = assignedAt;
+    }
+
+    public LocalDateTime getAcceptedAt() {
+        return acceptedAt;
+    }
+
+    public void setAcceptedAt(LocalDateTime acceptedAt) {
+        this.acceptedAt = acceptedAt;
+    }
+
+    public Long getAssignedDeliveryUserId() {
+        return deliveryPartner != null ? deliveryPartner.getId() : null;
+    }
+
+    public LocalDateTime getPickedUpAt() {
+        return pickedUpAt;
+    }
+
+    public void setPickedUpAt(LocalDateTime pickedUpAt) {
+        this.pickedUpAt = pickedUpAt;
+    }
+
+    public LocalDateTime getDeliveredAt() {
+        return deliveredAt;
+    }
+
+    public void setDeliveredAt(LocalDateTime deliveredAt) {
+        this.deliveredAt = deliveredAt;
+    }
+
+    public String getDeliveryNotes() {
+        return deliveryNotes;
+    }
+
+    public void setDeliveryNotes(String deliveryNotes) {
+        this.deliveryNotes = deliveryNotes;
+    }
+
+    public String getDeliveryOtp() {
+        return deliveryOtp;
+    }
+
+    public void setDeliveryOtp(String deliveryOtp) {
+        this.deliveryOtp = deliveryOtp;
+    }
+
+    public LocalDateTime getDeliveryOtpVerifiedAt() {
+        return deliveryOtpVerifiedAt;
+    }
+
+    public void setDeliveryOtpVerifiedAt(LocalDateTime deliveryOtpVerifiedAt) {
+        this.deliveryOtpVerifiedAt = deliveryOtpVerifiedAt;
+    }
+
+    public Boolean getCodCollected() {
+        return codCollected;
+    }
+
+    public void setCodCollected(Boolean codCollected) {
+        this.codCollected = codCollected;
+    }
+
+    public LocalDateTime getCodCollectedAt() {
+        return codCollectedAt;
+    }
+
+    public void setCodCollectedAt(LocalDateTime codCollectedAt) {
+        this.codCollectedAt = codCollectedAt;
     }
 }

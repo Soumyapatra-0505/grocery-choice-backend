@@ -74,6 +74,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     perms.addAll(com.grocerychoice.backend.entity.Permission.defaultAdminPermissions());
                 } else if (Role.STAFF.equals(role)) {
                     perms.addAll(com.grocerychoice.backend.entity.Permission.defaultStaffPermissions());
+                } else if (Role.DELIVERY.equals(role)) {
+                    perms.addAll(com.grocerychoice.backend.entity.Permission.defaultDeliveryPermissions());
                 }
                 for (String p : perms) {
                     authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("PERM_" + p));

@@ -84,4 +84,10 @@ public final class Permission {
         set.add(MANAGE_DELIVERY);
         return Collections.unmodifiableSet(set);
     }
+
+    public static Set<String> defaultDeliveryPermissions() {
+        Set<String> set = new LinkedHashSet<>();
+        set.add(MANAGE_DELIVERY);
+        return Collections.unmodifiableSet(set);
+    }
 }

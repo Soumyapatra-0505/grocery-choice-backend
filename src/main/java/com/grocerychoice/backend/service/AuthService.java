@@ -306,8 +306,8 @@ public class AuthService {
         User owner = userRepository.findByIdentifier(idInfo.normalized, cleanPhone)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid owner credentials"));
 
-        if (!owner.isOwner() && !owner.isAdmin() && !owner.isStaff()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access restricted to store staff, managers, and owners. Customer accounts cannot authenticate through Owner portal.");
+        if (!owner.isOwner() && !owner.isAdmin() && !owner.isStaff() && !owner.isDelivery()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access restricted to store staff, managers, owners, and delivery personnel. Customer accounts cannot authenticate through Owner portal.");
         }
 
         if (owner.getStatus() == com.grocerychoice.backend.entity.UserStatus.DISABLED) {
@@ -354,8 +354,8 @@ public class AuthService {
         User user = userRepository.findByIdentifier(idInfo.normalized, cleanPhone)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No owner or admin account found with this identifier"));
 
-        if (!user.isOwner() && !user.isAdmin() && !user.isStaff()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access restricted to store staff, managers, and owners. Customer accounts cannot authenticate through Owner portal.");
+        if (!user.isOwner() && !user.isAdmin() && !user.isStaff() && !user.isDelivery()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access restricted to store staff, managers, owners, and delivery personnel. Customer accounts cannot authenticate through Owner portal.");
         }
 
         if (user.getStatus() == com.grocerychoice.backend.entity.UserStatus.DISABLED) {
@@ -425,8 +425,8 @@ public class AuthService {
         User user = userRepository.findByIdentifier(idInfo.normalized, cleanPhone)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No owner or admin account found with this identifier"));
 
-        if (!user.isOwner() && !user.isAdmin() && !user.isStaff()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access restricted to store staff, managers, and owners. Customer accounts cannot authenticate through Owner portal.");
+        if (!user.isOwner() && !user.isAdmin() && !user.isStaff() && !user.isDelivery()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access restricted to store staff, managers, owners, and delivery personnel. Customer accounts cannot authenticate through Owner portal.");
         }
 
         if (user.getStatus() == com.grocerychoice.backend.entity.UserStatus.DISABLED) {
