@@ -105,6 +105,30 @@ public class DeliveryAssignmentService {
     }
 
     /**
+     * Retrieves completed delivery history for a specific delivery partner (DELIVERED only).
+     * Sorted newest completed orders first, with deliveryOtp masked.
+     */
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getDeliveryHistoryForDeliveryUser(Long deliveryUserId) {
+        List<Order> orders = orderRepository.findByDeliveryPartnerIdAndStatusOrderByCreatedAtDesc(
+                deliveryUserId,
+                OrderStatus.DELIVERED
+        );
+        return orders.stream()
+                .sorted((a, b) -> {
+                    LocalDateTime timeB = b.getDeliveredAt() != null ? b.getDeliveredAt() : b.getCreatedAt();
+                    LocalDateTime timeA = a.getDeliveredAt() != null ? a.getDeliveredAt() : a.getCreatedAt();
+                    if (timeB != null && timeA != null) {
+                        return timeB.compareTo(timeA);
+                    }
+                    return 0;
+                })
+                .map(OrderResponse::fromEntity)
+                .map(OrderResponse::maskDeliveryOtp)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Accepts a delivery assignment by the assigned delivery partner.
      * Order status remains PROCESSING.
      */

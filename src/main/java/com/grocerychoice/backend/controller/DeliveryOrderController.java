@@ -36,6 +36,15 @@ public class DeliveryOrderController {
     }
 
     /**
+     * Get completed delivery history for the currently authenticated delivery partner.
+     * Allowed role: DELIVERY only.
+     */
+    @GetMapping("/history")
+    public ResponseEntity<List<OrderResponse>> getDeliveryHistory(@AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(deliveryAssignmentService.getDeliveryHistoryForDeliveryUser(principal.getId()));
+    }
+
+    /**
      * Accept assignment for an assigned order.
      * Allowed role: DELIVERY only.
      */

@@ -692,4 +692,129 @@ class DeliveryLifecycleIntegrationTest {
         int countAfterSecond = auditLogRepository.findByActionOrderByCreatedAtDesc("DELIVERY_PICKED_UP").size();
         assertEquals(countAfterFirst, countAfterSecond, "Idempotent pickup retry must not create duplicate audit events");
     }
+
+    @Test
+    @DisplayName("T37: Delivery user can access history and delivery OTP is masked")
+    void testT37_DeliveryUserCanAccessHistoryAndOtpIsMasked() throws Exception {
+        Order deliveredOrder = createTestOrder("GC-P3-37-" + System.currentTimeMillis(),
+                OrderStatus.DELIVERED, deliveryPartnerA, true, "Prepaid", PaymentStatus.PAID);
+        deliveredOrder.setDeliveryOtp("9876");
+        deliveredOrder.setDeliveredAt(LocalDateTime.now().minusMinutes(5));
+        orderRepository.save(deliveredOrder);
+
+        mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", deliveryTokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(greaterThanOrEqualTo(1))))
+                .andExpect(jsonPath("$[0].orderNumber", is(deliveredOrder.getOrderNumber())))
+                .andExpect(jsonPath("$[0].status", is("DELIVERED")))
+                .andExpect(jsonPath("$[0].deliveryOtp").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("T38: Non-delivery roles cannot access delivery history endpoint")
+    void testT38_NonDeliveryRolesCannotAccessHistory() throws Exception {
+        // Customer -> 403
+        mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", customerToken))
+                .andExpect(status().isForbidden());
+
+        // Owner -> 403
+        mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", ownerToken))
+                .andExpect(status().isForbidden());
+
+        // Admin -> 403
+        mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", adminToken))
+                .andExpect(status().isForbidden());
+
+        // Staff -> 403
+        mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", staffToken))
+                .andExpect(status().isForbidden());
+
+        // Unauthenticated -> 401
+        mockMvc.perform(get("/api/delivery/orders/history"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("T39: Rider only receives their own DELIVERED orders")
+    void testT39_RiderOnlyReceivesTheirOwnDeliveredOrders() throws Exception {
+        String numA = "GC-P3-39A-" + System.currentTimeMillis();
+        String numB = "GC-P3-39B-" + System.currentTimeMillis();
+
+        Order orderA = createTestOrder(numA, OrderStatus.DELIVERED, deliveryPartnerA, true, "Prepaid", PaymentStatus.PAID);
+        orderA.setDeliveredAt(LocalDateTime.now().minusMinutes(10));
+        orderRepository.save(orderA);
+
+        Order orderB = createTestOrder(numB, OrderStatus.DELIVERED, deliveryPartnerB, true, "Prepaid", PaymentStatus.PAID);
+        orderB.setDeliveredAt(LocalDateTime.now().minusMinutes(5));
+        orderRepository.save(orderB);
+
+        // Partner A should see orderA, never orderB
+        mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", deliveryTokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].orderNumber", hasItem(numA)))
+                .andExpect(jsonPath("$[*].orderNumber", not(hasItem(numB))));
+
+        // Partner B should see orderB, never orderA
+        mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", deliveryTokenB))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].orderNumber", hasItem(numB)))
+                .andExpect(jsonPath("$[*].orderNumber", not(hasItem(numA))));
+    }
+
+    @Test
+    @DisplayName("T40: PROCESSING and OUT_FOR_DELIVERY orders are excluded from history")
+    void testT40_ProcessingAndOutForDeliveryExcludedFromHistory() throws Exception {
+        String numProc = "GC-P3-40P-" + System.currentTimeMillis();
+        String numOut = "GC-P3-40O-" + System.currentTimeMillis();
+        String numDel = "GC-P3-40D-" + System.currentTimeMillis();
+
+        createTestOrder(numProc, OrderStatus.PROCESSING, deliveryPartnerA, true, "Prepaid", PaymentStatus.PENDING);
+        createTestOrder(numOut, OrderStatus.OUT_FOR_DELIVERY, deliveryPartnerA, true, "Prepaid", PaymentStatus.PENDING);
+        Order delOrder = createTestOrder(numDel, OrderStatus.DELIVERED, deliveryPartnerA, true, "Prepaid", PaymentStatus.PAID);
+        delOrder.setDeliveredAt(LocalDateTime.now());
+        orderRepository.save(delOrder);
+
+        mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", deliveryTokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].orderNumber", hasItem(numDel)))
+                .andExpect(jsonPath("$[*].orderNumber", not(hasItem(numProc))))
+                .andExpect(jsonPath("$[*].orderNumber", not(hasItem(numOut))));
+    }
+
+    @Test
+    @DisplayName("T41: Newest completed orders are returned first")
+    void testT41_NewestCompletedOrdersReturnedFirst() throws Exception {
+        String numOlder = "GC-P3-41-OLD-" + System.currentTimeMillis();
+        String numNewer = "GC-P3-41-NEW-" + System.currentTimeMillis();
+
+        Order olderOrder = createTestOrder(numOlder, OrderStatus.DELIVERED, deliveryPartnerA, true, "Prepaid", PaymentStatus.PAID);
+        olderOrder.setDeliveredAt(LocalDateTime.now().minusHours(2));
+        orderRepository.save(olderOrder);
+
+        Order newerOrder = createTestOrder(numNewer, OrderStatus.DELIVERED, deliveryPartnerA, true, "Prepaid", PaymentStatus.PAID);
+        newerOrder.setDeliveredAt(LocalDateTime.now().minusMinutes(5));
+        orderRepository.save(newerOrder);
+
+        MvcResult result = mockMvc.perform(get("/api/delivery/orders/history")
+                        .header("Authorization", deliveryTokenA))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String json = result.getResponse().getContentAsString();
+        int indexOfNewer = json.indexOf(numNewer);
+        int indexOfOlder = json.indexOf(numOlder);
+
+        assertTrue(indexOfNewer >= 0, "Newer order should be present in history response");
+        assertTrue(indexOfOlder >= 0, "Older order should be present in history response");
+        assertTrue(indexOfNewer < indexOfOlder, "Newer completed order must appear before older completed order");
+    }
 }
+
