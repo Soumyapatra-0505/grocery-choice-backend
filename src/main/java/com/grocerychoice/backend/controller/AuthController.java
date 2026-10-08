@@ -4,6 +4,7 @@ import com.grocerychoice.backend.dto.*;
 import com.grocerychoice.backend.security.UserPrincipal;
 import com.grocerychoice.backend.service.AuthService;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,9 +18,12 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final boolean devMode;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService,
+                          @Value("${app.dev-mode:false}") boolean devMode) {
         this.authService = authService;
+        this.devMode = devMode;
     }
 
     /**
@@ -80,17 +84,25 @@ public class AuthController {
 
     /**
      * Helper endpoint for Owner Portal startup / local testing.
+     * Disabled in production mode (requires app.dev-mode=true).
      */
     @GetMapping("/owner-token")
     public ResponseEntity<AuthResponse> getOwnerToken() {
+        if (!devMode) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Development endpoints are disabled in production mode");
+        }
         return ResponseEntity.ok(authService.getOwnerToken());
     }
 
     /**
      * Development mode endpoint to inspect generated OTP for local test automation.
+     * Disabled in production mode (requires app.dev-mode=true).
      */
     @GetMapping("/dev-otp/{identifier}")
     public ResponseEntity<Map<String, String>> getDevOtp(@PathVariable String identifier) {
+        if (!devMode) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Development endpoints are disabled in production mode");
+        }
         String otp = authService.getDevOtp(identifier);
         if (otp == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No active dev OTP found for identifier");

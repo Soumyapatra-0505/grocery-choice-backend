@@ -46,6 +46,9 @@ public class SecurityConfig {
     @Value("${cors.allowed-origins:http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,https://grocery-choice-customer.vercel.app,https://grocery-choice-customer-git-main-grocery-choice.vercel.app,https://grocery-choice-customer-8ntfdslp-grocery-choice.vercel.app}")
     private String allowedOriginsConfig;
 
+    @Value("${app.dev-mode:false}")
+    private boolean devMode;
+
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                           JwtAuthenticationEntryPoint authenticationEntryPoint,
                           CustomAccessDeniedHandler accessDeniedHandler) {
@@ -69,58 +72,69 @@ public class SecurityConfig {
                 .authenticationEntryPoint(authenticationEntryPoint)
                 .accessDeniedHandler(accessDeniedHandler)
             )
-            .authorizeHttpRequests(authorize -> authorize
+            .authorizeHttpRequests(authorize -> {
                 // Allow all CORS preflight OPTIONS requests without authentication
-                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                authorize.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
 
                 // Public Health & Auth Endpoints
-                .requestMatchers("/api/health/**").permitAll()
-                .requestMatchers("/api/auth/send-otp", "/api/auth/verify-otp", "/api/auth/msg91/**", "/api/auth/owner-login", "/api/auth/owner/**", "/api/auth/owner-token", "/api/auth/dev-otp/**").permitAll()
+                authorize.requestMatchers("/api/health/**").permitAll();
+                authorize.requestMatchers(
+                    "/api/auth/send-otp",
+                    "/api/auth/verify-otp",
+                    "/api/auth/msg91/**",
+                    "/api/auth/owner-login",
+                    "/api/auth/owner/**"
+                ).permitAll();
+
+                // Development-only endpoints (only permitted when devMode is explicitly enabled)
+                if (devMode) {
+                    authorize.requestMatchers("/api/auth/owner-token", "/api/auth/dev-otp/**").permitAll();
+                }
 
                 // Public Catalog Browsing (GET only)
-                .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                authorize.requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll();
+                authorize.requestMatchers(HttpMethod.GET, "/api/products/**").permitAll();
 
                 // Owner Catalog Management (POST, PUT, PATCH, DELETE)
-                .requestMatchers(HttpMethod.POST, "/api/categories/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.PUT, "/api/categories/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.DELETE, "/api/categories/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.POST, "/api/products/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.PUT, "/api/products/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.PATCH, "/api/products/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
-                .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasAnyRole("OWNER", "ADMIN")
+                authorize.requestMatchers(HttpMethod.POST, "/api/categories/**").hasAnyRole("OWNER", "ADMIN");
+                authorize.requestMatchers(HttpMethod.PUT, "/api/categories/**").hasAnyRole("OWNER", "ADMIN");
+                authorize.requestMatchers(HttpMethod.DELETE, "/api/categories/**").hasAnyRole("OWNER", "ADMIN");
+                authorize.requestMatchers(HttpMethod.POST, "/api/products/**").hasAnyRole("OWNER", "ADMIN");
+                authorize.requestMatchers(HttpMethod.PUT, "/api/products/**").hasAnyRole("OWNER", "ADMIN");
+                authorize.requestMatchers(HttpMethod.PATCH, "/api/products/**").hasAnyRole("OWNER", "ADMIN", "STAFF");
+                authorize.requestMatchers(HttpMethod.DELETE, "/api/products/**").hasAnyRole("OWNER", "ADMIN");
 
                 // Owner & Staff Order Management Endpoints
-                .requestMatchers(HttpMethod.GET, "/api/orders").hasAnyRole("OWNER", "ADMIN", "STAFF")
-                .requestMatchers(HttpMethod.GET, "/api/orders/status/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
-                .requestMatchers(HttpMethod.GET, "/api/orders/eligible-delivery-partners").hasAnyRole("OWNER", "ADMIN", "STAFF")
-                .requestMatchers(HttpMethod.POST, "/api/orders/*/delivery-assignment").hasAnyRole("OWNER", "ADMIN", "STAFF")
-                .requestMatchers(HttpMethod.PATCH, "/api/orders/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
+                authorize.requestMatchers(HttpMethod.GET, "/api/orders").hasAnyRole("OWNER", "ADMIN", "STAFF");
+                authorize.requestMatchers(HttpMethod.GET, "/api/orders/status/**").hasAnyRole("OWNER", "ADMIN", "STAFF");
+                authorize.requestMatchers(HttpMethod.GET, "/api/orders/eligible-delivery-partners").hasAnyRole("OWNER", "ADMIN", "STAFF");
+                authorize.requestMatchers(HttpMethod.POST, "/api/orders/*/delivery-assignment").hasAnyRole("OWNER", "ADMIN", "STAFF");
+                authorize.requestMatchers(HttpMethod.PATCH, "/api/orders/**").hasAnyRole("OWNER", "ADMIN", "STAFF");
 
                 // Staff & Ownership Management Endpoints
-                .requestMatchers("/api/staff/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers("/api/ownership/**").hasAnyRole("OWNER", "ADMIN")
-                .requestMatchers(HttpMethod.GET, "/api/designations/**").hasAnyRole("OWNER", "ADMIN", "STAFF")
-                .requestMatchers("/api/designations/**").hasAnyRole("OWNER", "ADMIN")
+                authorize.requestMatchers("/api/staff/**").hasAnyRole("OWNER", "ADMIN");
+                authorize.requestMatchers("/api/ownership/**").hasAnyRole("OWNER", "ADMIN");
+                authorize.requestMatchers(HttpMethod.GET, "/api/designations/**").hasAnyRole("OWNER", "ADMIN", "STAFF");
+                authorize.requestMatchers("/api/designations/**").hasAnyRole("OWNER", "ADMIN");
 
                 // Delivery Operations Endpoints (DELIVERY role only for delivery orders)
-                .requestMatchers("/api/delivery/orders/**").hasRole("DELIVERY")
-                .requestMatchers("/api/delivery/**").hasAnyRole("OWNER", "ADMIN", "STAFF", "DELIVERY")
+                authorize.requestMatchers("/api/delivery/orders/**").hasRole("DELIVERY");
+                authorize.requestMatchers("/api/delivery/**").hasAnyRole("OWNER", "ADMIN", "STAFF", "DELIVERY");
 
                 // Authenticated Customer / User Endpoints
-                .requestMatchers(HttpMethod.POST, "/api/orders").authenticated()
-                .requestMatchers(HttpMethod.GET, "/api/orders/my-orders").authenticated()
-                .requestMatchers(HttpMethod.GET, "/api/orders/customer/**").authenticated()
-                .requestMatchers(HttpMethod.GET, "/api/orders/number/**").authenticated()
-                .requestMatchers(HttpMethod.GET, "/api/orders/*").authenticated()
-                .requestMatchers(HttpMethod.POST, "/api/orders/*/cancel").authenticated()
-                .requestMatchers("/api/addresses/**").authenticated()
-                .requestMatchers("/api/payments/**").authenticated()
-                .requestMatchers("/api/auth/me").authenticated()
+                authorize.requestMatchers(HttpMethod.POST, "/api/orders").authenticated();
+                authorize.requestMatchers(HttpMethod.GET, "/api/orders/my-orders").authenticated();
+                authorize.requestMatchers(HttpMethod.GET, "/api/orders/customer/**").authenticated();
+                authorize.requestMatchers(HttpMethod.GET, "/api/orders/number/**").authenticated();
+                authorize.requestMatchers(HttpMethod.GET, "/api/orders/*").authenticated();
+                authorize.requestMatchers(HttpMethod.POST, "/api/orders/*/cancel").authenticated();
+                authorize.requestMatchers("/api/addresses/**").authenticated();
+                authorize.requestMatchers("/api/payments/**").authenticated();
+                authorize.requestMatchers("/api/auth/me").authenticated();
 
                 // All other endpoints require authentication
-                .anyRequest().authenticated()
-            )
+                authorize.anyRequest().authenticated();
+            })
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

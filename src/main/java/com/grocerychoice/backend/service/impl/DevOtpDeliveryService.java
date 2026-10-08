@@ -25,7 +25,7 @@ public class DevOtpDeliveryService implements OtpDeliveryService {
     private final boolean devMode;
     private final Map<String, String> devOtpCache = new ConcurrentHashMap<>();
 
-    public DevOtpDeliveryService(@Value("${app.dev-mode:true}") boolean devMode) {
+    public DevOtpDeliveryService(@Value("${app.dev-mode:false}") boolean devMode) {
         this.devMode = devMode;
     }
 
