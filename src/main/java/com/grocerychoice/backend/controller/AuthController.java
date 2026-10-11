@@ -135,4 +135,19 @@ public class AuthController {
         UserSummaryResponse response = authService.updateCustomerProfile(principal.getId(), request);
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * Updates password for the authenticated staff, admin, owner, or delivery account.
+     */
+    @PutMapping("/password")
+    public ResponseEntity<Map<String, Object>> changePassword(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody ChangePasswordRequest request
+    ) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        authService.changePassword(principal, request);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Password changed successfully"));
+    }
 }

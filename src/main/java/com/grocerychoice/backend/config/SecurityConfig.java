@@ -131,6 +131,7 @@ public class SecurityConfig {
                 authorize.requestMatchers("/api/addresses/**").authenticated();
                 authorize.requestMatchers("/api/payments/**").authenticated();
                 authorize.requestMatchers("/api/auth/me").authenticated();
+                authorize.requestMatchers(HttpMethod.PUT, "/api/auth/password").authenticated();
 
                 // All other endpoints require authentication
                 authorize.anyRequest().authenticated();

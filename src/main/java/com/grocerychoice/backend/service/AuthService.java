@@ -3,13 +3,16 @@ package com.grocerychoice.backend.service;
 import com.grocerychoice.backend.dto.*;
 import com.grocerychoice.backend.entity.*;
 import com.grocerychoice.backend.repository.AddressRepository;
+import com.grocerychoice.backend.repository.AuditLogRepository;
 import com.grocerychoice.backend.repository.OtpVerificationRepository;
 import com.grocerychoice.backend.repository.UserRepository;
 import com.grocerychoice.backend.security.JwtTokenProvider;
+import com.grocerychoice.backend.security.UserPrincipal;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -45,6 +48,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final Optional<OtpDeliveryService> otpDeliveryService;
+    private final Optional<AuditLogRepository> auditLogRepository;
 
     private final int otpExpiryMinutes;
     private final int maxAttempts;
@@ -71,12 +75,29 @@ public class AuthService {
             @Value("${otp.expiry-minutes:5}") int otpExpiryMinutes,
             @Value("${otp.max-attempts:5}") int maxAttempts,
             @Value("${otp.resend-cooldown-seconds:60}") int resendCooldownSeconds) {
+        this(userRepository, addressRepository, otpVerificationRepository, passwordEncoder, jwtTokenProvider,
+                otpDeliveryService, Optional.empty(), otpExpiryMinutes, maxAttempts, resendCooldownSeconds);
+    }
+
+    @Autowired
+    public AuthService(
+            UserRepository userRepository,
+            AddressRepository addressRepository,
+            OtpVerificationRepository otpVerificationRepository,
+            PasswordEncoder passwordEncoder,
+            JwtTokenProvider jwtTokenProvider,
+            Optional<OtpDeliveryService> otpDeliveryService,
+            Optional<AuditLogRepository> auditLogRepository,
+            @Value("${otp.expiry-minutes:5}") int otpExpiryMinutes,
+            @Value("${otp.max-attempts:5}") int maxAttempts,
+            @Value("${otp.resend-cooldown-seconds:60}") int resendCooldownSeconds) {
         this.userRepository = userRepository;
         this.addressRepository = addressRepository;
         this.otpVerificationRepository = otpVerificationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.otpDeliveryService = otpDeliveryService != null ? otpDeliveryService : Optional.empty();
+        this.auditLogRepository = auditLogRepository != null ? auditLogRepository : Optional.empty();
         this.otpExpiryMinutes = otpExpiryMinutes;
         this.maxAttempts = maxAttempts;
         this.resendCooldownSeconds = resendCooldownSeconds;
@@ -617,6 +638,88 @@ public class AuthService {
         addressRepository.save(defaultAddress);
 
         return savedUser;
+    }
+
+    /**
+     * Changes password for an authenticated staff, admin, owner, or delivery account.
+     * Enforces current password verification, minimum length (12 chars), confirmation matching,
+     * and prevents password reuse. Preserves user ID, role, status, and all existing properties.
+     */
+    @Transactional
+    public void changePassword(UserPrincipal principal, ChangePasswordRequest request) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password change request cannot be null");
+        }
+
+        String currentPassword = request.getCurrentPassword();
+        if (currentPassword == null || currentPassword.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Current password is required");
+        }
+
+        String newPassword = request.getNewPassword();
+        if (newPassword == null || newPassword.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password is required");
+        }
+
+        String confirmPassword = request.getConfirmPassword();
+        if (confirmPassword == null || confirmPassword.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password confirmation is required");
+        }
+
+        String trimmedNew = newPassword.trim();
+        String trimmedConfirm = confirmPassword.trim();
+
+        if (trimmedNew.length() < 12) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password must be at least 12 characters long");
+        }
+
+        if (!trimmedNew.equals(trimmedConfirm)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password and confirmation password do not match");
+        }
+
+        User user = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (user.getStatus() == UserStatus.DISABLED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Your account has been disabled. Please contact the Primary Owner.");
+        }
+
+        if (user.getRole() == Role.CUSTOMER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Password management is restricted to staff, manager, owner, and delivery accounts");
+        }
+
+        if (user.getPasswordHash() == null || user.getPasswordHash().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account does not have a configured password credential to change");
+        }
+
+        // Verify current password
+        if (!passwordEncoder.matches(currentPassword.trim(), user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Incorrect current password");
+        }
+
+        // Reject reuse of current password
+        if (passwordEncoder.matches(trimmedNew, user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password cannot be the same as the current password");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(trimmedNew));
+        User saved = userRepository.save(user);
+
+        auditLogRepository.ifPresent(repo -> repo.save(new AuditLog(
+                "PASSWORD_CHANGED",
+                saved.getId(),
+                saved.getEmail(),
+                saved.getFullName(),
+                saved.getId(),
+                saved.getEmail(),
+                saved.getFullName(),
+                "User successfully changed their password"
+        )));
+
+        log.info("Password successfully changed for user ID: {} (email: {})", saved.getId(), saved.getEmail());
     }
 
     private IdentifierInfo parseIdentifier(String raw) {
