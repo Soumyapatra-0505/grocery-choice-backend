@@ -2,6 +2,7 @@ package com.grocerychoice.backend.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.grocerychoice.backend.entity.User;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,17 +26,47 @@ public class JwtTokenProvider {
     private static final Logger log = LoggerFactory.getLogger(JwtTokenProvider.class);
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
+    public static final String HISTORICAL_DEFAULT_SECRET =
+            "grocery_choice_secure_jwt_secret_key_2026_at_least_256_bits_long_for_hmac_sha256";
+    public static final int MIN_SECRET_LENGTH_BYTES = 32;
+
     private final String jwtSecret;
     private final long jwtExpirationMs;
     private final ObjectMapper objectMapper;
 
     public JwtTokenProvider(
-            @Value("${jwt.secret:grocery_choice_secure_jwt_secret_key_2026_at_least_256_bits_long_for_hmac_sha256}") String jwtSecret,
+            @Value("${jwt.secret:}") String jwtSecret,
             @Value("${jwt.expiration:86400000}") long jwtExpirationMs,
             ObjectMapper objectMapper) {
-        this.jwtSecret = jwtSecret;
+        validateSecret(jwtSecret);
+        this.jwtSecret = jwtSecret != null ? jwtSecret.trim() : "";
         this.jwtExpirationMs = jwtExpirationMs;
         this.objectMapper = objectMapper;
+    }
+
+    @PostConstruct
+    public void validateConfiguration() {
+        validateSecret(this.jwtSecret);
+    }
+
+    public static void validateSecret(String secret) {
+        if (secret == null || secret.trim().isEmpty()) {
+            throw new IllegalStateException(
+                    "JWT secret is not configured. The JWT_SECRET environment variable must be set at startup."
+            );
+        }
+        if (HISTORICAL_DEFAULT_SECRET.equals(secret.trim())) {
+            throw new IllegalStateException(
+                    "Insecure configuration: JWT_SECRET matches the known historical repository default secret. A new, unique secret must be configured."
+            );
+        }
+        byte[] secretBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (secretBytes.length < MIN_SECRET_LENGTH_BYTES) {
+            throw new IllegalStateException(
+                    "Insecure configuration: JWT_SECRET is too short (" + secretBytes.length + " bytes). " +
+                    "HMAC-SHA256 requires at least " + MIN_SECRET_LENGTH_BYTES + " bytes (256 bits)."
+            );
+        }
     }
 
     /**

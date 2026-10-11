@@ -4,6 +4,7 @@ import com.grocerychoice.backend.entity.Address;
 import com.grocerychoice.backend.entity.Category;
 import com.grocerychoice.backend.entity.Role;
 import com.grocerychoice.backend.entity.User;
+import com.grocerychoice.backend.entity.UserStatus;
 import com.grocerychoice.backend.repository.AddressRepository;
 import com.grocerychoice.backend.repository.CategoryRepository;
 import com.grocerychoice.backend.entity.Product;
@@ -12,28 +13,42 @@ import com.grocerychoice.backend.repository.ProductRepository;
 import com.grocerychoice.backend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 
 /**
  * Idempotent Database Seeder for Grocery Choice core data.
  *
- * Populates initial product categories, default customer, and address only if they do not already exist.
- * Repeated executions or Spring Boot restarts will never produce duplicate records.
+ * Populates initial product categories and product catalog safely and idempotently.
+ * Default user seeding is decoupled and disabled by default (app.seed-users=false).
+ * Initial primary owner can be bootstrapped securely via BOOTSTRAP_OWNER_PASSWORD environment variable.
  */
 @Component
 public class DatabaseSeeder implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DatabaseSeeder.class);
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final CategoryRepository categoryRepository;
     private final UserRepository userRepository;
     private final AddressRepository addressRepository;
     private final ProductRepository productRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    private final boolean seedUsers;
+    private final String bootstrapOwnerEmail;
+    private final String bootstrapOwnerPassword;
+    private final String bootstrapOwnerPhone;
+    private final String bootstrapOwnerName;
+    private final String devSeedPassword;
 
     private static final List<String> SEED_CATEGORIES = List.of(
         "Fruits & Vegetables",
@@ -49,34 +64,136 @@ public class DatabaseSeeder implements CommandLineRunner {
     public DatabaseSeeder(CategoryRepository categoryRepository,
                           UserRepository userRepository,
                           AddressRepository addressRepository,
-                          ProductRepository productRepository) {
+                          ProductRepository productRepository,
+                          PasswordEncoder passwordEncoder,
+                          @Value("${app.seed-users:false}") boolean seedUsers,
+                          @Value("${bootstrap.owner.email:${BOOTSTRAP_OWNER_EMAIL:}}") String bootstrapOwnerEmail,
+                          @Value("${bootstrap.owner.password:${BOOTSTRAP_OWNER_PASSWORD:}}") String bootstrapOwnerPassword,
+                          @Value("${bootstrap.owner.phone:${BOOTSTRAP_OWNER_PHONE:}}") String bootstrapOwnerPhone,
+                          @Value("${bootstrap.owner.name:${BOOTSTRAP_OWNER_NAME:}}") String bootstrapOwnerName,
+                          @Value("${app.seed-users.password:${DEV_SEED_PASSWORD:}}") String devSeedPassword) {
         this.categoryRepository = categoryRepository;
         this.userRepository = userRepository;
         this.addressRepository = addressRepository;
         this.productRepository = productRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.seedUsers = seedUsers;
+        this.bootstrapOwnerEmail = bootstrapOwnerEmail;
+        this.bootstrapOwnerPassword = bootstrapOwnerPassword;
+        this.bootstrapOwnerPhone = bootstrapOwnerPhone;
+        this.bootstrapOwnerName = bootstrapOwnerName;
+        this.devSeedPassword = devSeedPassword;
     }
 
     @Override
     public void run(String... args) {
+        // Safe catalog seeding runs unconditionally and idempotently
         seedCategories();
-        seedDefaultCustomer();
-        seedDefaultOwner();
-        seedDefaultAdmin();
         seedProducts();
+
+        // Optional secure one-time initial owner bootstrap via environment variable
+        provisionInitialOwnerIfConfigured();
+
+        // Default user seeding is decoupled and disabled by default (app.seed-users=false)
+        if (seedUsers) {
+            log.info("Default user seeding is enabled (app.seed-users=true). Running development user seeder...");
+            seedDevelopmentUsers();
+        } else {
+            log.info("Default user seeding is disabled (app.seed-users=false). Existing users preserved.");
+        }
     }
 
-    private void seedDefaultCustomer() {
-        if (userRepository.findByRole(Role.CUSTOMER).isEmpty()) {
-            log.info("No customer found. Seeding default customer and address...");
+    private void provisionInitialOwnerIfConfigured() {
+        if (!userRepository.findByRole(Role.OWNER).isEmpty()) {
+            ensurePrimaryOwnerDesignation();
+            return;
+        }
+
+        if (bootstrapOwnerPassword == null || bootstrapOwnerPassword.trim().isEmpty()) {
+            log.info("No OWNER user found in database. Initial owner bootstrap password is not provided (BOOTSTRAP_OWNER_PASSWORD is unset). Ordinary startup continues without creating an owner.");
+            return;
+        }
+
+        String trimmedPassword = bootstrapOwnerPassword.trim();
+        if (trimmedPassword.length() < 12) {
+            log.warn("Provided BOOTSTRAP_OWNER_PASSWORD does not meet the minimum length requirement (at least 12 characters). Initial owner creation skipped.");
+            return;
+        }
+
+        String email = (bootstrapOwnerEmail != null && !bootstrapOwnerEmail.isBlank())
+                ? bootstrapOwnerEmail.trim().toLowerCase()
+                : "owner@grocerychoice.com";
+        String name = (bootstrapOwnerName != null && !bootstrapOwnerName.isBlank())
+                ? bootstrapOwnerName.trim()
+                : "Store Owner";
+        String phone = (bootstrapOwnerPhone != null && !bootstrapOwnerPhone.isBlank())
+                ? bootstrapOwnerPhone.trim()
+                : "+91 98765 43211";
+
+        if (userRepository.findByEmail(email).isPresent()) {
+            log.warn("User with email {} already exists. Cannot bootstrap as initial owner. Skipping.", email);
+            return;
+        }
+
+        User owner = new User(
+                email,
+                phone,
+                name,
+                passwordEncoder.encode(trimmedPassword),
+                Role.OWNER
+        );
+        owner.setPrimaryOwner(true);
+        owner.setStatus(UserStatus.ACTIVE);
+        owner.setDesignation("Store Owner");
+        userRepository.save(owner);
+        log.info("Successfully provisioned initial Primary Owner for email: {}", email);
+    }
+
+    private void ensurePrimaryOwnerDesignation() {
+        if (userRepository.findByPrimaryOwnerTrue().isEmpty()) {
+            List<User> owners = userRepository.findByRole(Role.OWNER);
+            if (!owners.isEmpty()) {
+                User first = owners.get(0);
+                first.setPrimaryOwner(true);
+                if (first.getDesignation() == null || first.getDesignation().isBlank()) {
+                    first.setDesignation("Store Owner");
+                }
+                userRepository.save(first);
+                log.info("Designated existing owner {} as Primary Owner", first.getEmail());
+            }
+        }
+    }
+
+    private void seedDevelopmentUsers() {
+        String effectivePassword = (devSeedPassword != null && !devSeedPassword.isBlank())
+                ? devSeedPassword.trim()
+                : generateSecureRandomPassword();
+
+        seedDevelopmentCustomer();
+        seedDevelopmentOwner(effectivePassword);
+        seedDevelopmentAdmin(effectivePassword);
+    }
+
+    private String generateSecureRandomPassword() {
+        byte[] randomBytes = new byte[16];
+        SECURE_RANDOM.nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    private void seedDevelopmentCustomer() {
+        if (userRepository.findByRole(Role.CUSTOMER).isEmpty()
+                && userRepository.findByEmail("customer@grocerychoice.com").isEmpty()) {
+            log.info("No customer found. Seeding development customer and address...");
             User customer = new User(
                 "customer@grocerychoice.com",
                 "+91 98765 43210",
                 "Rahul Sharma",
-                new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("Customer@123"),
+                null, // Customer authenticates via OTP only; no password required
                 Role.CUSTOMER
             );
+            customer.setStatus(UserStatus.ACTIVE);
             customer = userRepository.save(customer);
-            log.info("Seeded default customer with ID: {}", customer.getId());
+            log.info("Seeded development customer with ID: {}", customer.getId());
 
             Address address = new Address(
                 customer,
@@ -91,51 +208,46 @@ public class DatabaseSeeder implements CommandLineRunner {
                 true
             );
             addressRepository.save(address);
-            log.info("Seeded default address for customer.");
+            log.info("Seeded default address for development customer.");
         }
     }
 
-    private void seedDefaultOwner() {
-        if (userRepository.findByRole(Role.OWNER).isEmpty()) {
-            log.info("No owner user found. Seeding default owner user...");
+    private void seedDevelopmentOwner(String rawPassword) {
+        if (userRepository.findByRole(Role.OWNER).isEmpty()
+                && userRepository.findByEmail("owner@grocerychoice.com").isEmpty()) {
+            log.info("No owner user found. Seeding development owner user...");
             User owner = new User(
                 "owner@grocerychoice.com",
                 "+91 98765 43211",
                 "Suresh Verma",
-                new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("Admin@123"),
+                passwordEncoder.encode(rawPassword),
                 Role.OWNER
             );
             owner.setPrimaryOwner(true);
+            owner.setStatus(UserStatus.ACTIVE);
             owner.setDesignation("Store Owner");
             owner = userRepository.save(owner);
-            log.info("Seeded default Primary Owner with ID: {} and email: {}", owner.getId(), owner.getEmail());
-        } else if (userRepository.findByPrimaryOwnerTrue().isEmpty()) {
-            List<User> owners = userRepository.findByRole(Role.OWNER);
-            if (!owners.isEmpty()) {
-                User first = owners.get(0);
-                first.setPrimaryOwner(true);
-                if (first.getDesignation() == null || first.getDesignation().isBlank()) {
-                    first.setDesignation("Store Owner");
-                }
-                userRepository.save(first);
-                log.info("Designated existing owner {} as Primary Owner", first.getEmail());
-            }
+            log.info("Seeded development Primary Owner with ID: {} and email: {}", owner.getId(), owner.getEmail());
+        } else {
+            ensurePrimaryOwnerDesignation();
         }
     }
 
-    private void seedDefaultAdmin() {
-        if (userRepository.findByRole(Role.ADMIN).isEmpty()) {
-            log.info("No admin user found. Seeding default admin user...");
+    private void seedDevelopmentAdmin(String rawPassword) {
+        if (userRepository.findByRole(Role.ADMIN).isEmpty()
+                && userRepository.findByEmail("admin@grocerychoice.com").isEmpty()) {
+            log.info("No admin user found. Seeding development admin user...");
             User admin = new User(
                 "admin@grocerychoice.com",
                 "+91 98765 43212",
                 "System Administrator",
-                new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("Admin@123"),
+                passwordEncoder.encode(rawPassword),
                 Role.ADMIN
             );
+            admin.setStatus(UserStatus.ACTIVE);
             admin.setDesignation("Store Manager");
             admin = userRepository.save(admin);
-            log.info("Seeded default admin with ID: {} and email: {}", admin.getId(), admin.getEmail());
+            log.info("Seeded development admin with ID: {} and email: {}", admin.getId(), admin.getEmail());
         }
     }
 
