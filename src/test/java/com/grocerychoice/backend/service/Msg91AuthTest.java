@@ -13,6 +13,15 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.matches;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class Msg91AuthTest {
 
@@ -75,5 +84,70 @@ class Msg91AuthTest {
     void testConstructorHandlesNullOptional() {
         AuthService serviceWithNull = new AuthService(null, null, null, null, null, null, 5, 5, 60);
         assertNull(serviceWithNull.getDevOtp("9876543210"));
+    }
+
+    @Test
+    @DisplayName("AuthService delegates OTP delivery to OtpDeliveryService on sendOtp")
+    void testSendOtpDelegatesToDeliveryService() {
+        com.grocerychoice.backend.repository.OtpVerificationRepository mockRepo =
+                mock(com.grocerychoice.backend.repository.OtpVerificationRepository.class);
+        org.springframework.security.crypto.password.PasswordEncoder mockEncoder =
+                mock(org.springframework.security.crypto.password.PasswordEncoder.class);
+        OtpDeliveryService mockDeliveryService = mock(OtpDeliveryService.class);
+
+        when(mockRepo.findTopByIdentifierAndPurposeOrderByCreatedAtDesc(any(), any()))
+                .thenReturn(Optional.empty());
+        when(mockEncoder.encode(any())).thenReturn("hashed-otp");
+
+        AuthService service = new AuthService(
+                null,
+                null,
+                mockRepo,
+                mockEncoder,
+                null,
+                Optional.of(mockDeliveryService),
+                5,
+                5,
+                60
+        );
+
+        SendOtpRequest request = new SendOtpRequest("9876543210", null);
+        com.grocerychoice.backend.dto.SendOtpResponse response = service.sendOtp(request);
+
+        assertTrue(response.isSuccess());
+        verify(mockDeliveryService, times(1))
+                .deliverOtp(eq("+919876543210"), matches("^\\d{6}$"), eq(com.grocerychoice.backend.entity.OtpPurpose.LOGIN));
+    }
+
+    @Test
+    @DisplayName("AuthService propagates delivery exception when OtpDeliveryService fails")
+    void testSendOtpPropagatesDeliveryException() {
+        com.grocerychoice.backend.repository.OtpVerificationRepository mockRepo =
+                mock(com.grocerychoice.backend.repository.OtpVerificationRepository.class);
+        org.springframework.security.crypto.password.PasswordEncoder mockEncoder =
+                mock(org.springframework.security.crypto.password.PasswordEncoder.class);
+        OtpDeliveryService mockDeliveryService = mock(OtpDeliveryService.class);
+
+        when(mockRepo.findTopByIdentifierAndPurposeOrderByCreatedAtDesc(any(), any()))
+                .thenReturn(Optional.empty());
+        when(mockEncoder.encode(any())).thenReturn("hashed-otp");
+        doThrow(new ResponseStatusException(HttpStatus.BAD_GATEWAY, "MSG91 failure"))
+                .when(mockDeliveryService).deliverOtp(any(), any(), any());
+
+        AuthService service = new AuthService(
+                null,
+                null,
+                mockRepo,
+                mockEncoder,
+                null,
+                Optional.of(mockDeliveryService),
+                5,
+                5,
+                60
+        );
+
+        SendOtpRequest request = new SendOtpRequest("9876543210", null);
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> service.sendOtp(request));
+        assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
     }
 }
